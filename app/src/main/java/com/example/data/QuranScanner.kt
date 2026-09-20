@@ -12,12 +12,15 @@ import java.io.File
 object QuranScanner {
     private const val TAG = "QuranScanner"
 
-    // Only .mp3 and .wav files as requested
-    private val AUDIO_EXTENSIONS = setOf("mp3", "wav")
+    // All supported audio & video container extensions that can contain audio recitations
+    private val AUDIO_EXTENSIONS = setOf(
+        "mp3", "wav", "m4a", "aac", "ogg", "flac", "opus",
+        "mp4", "m4v", "mka", "webm", "3gp", "amr", "wma",
+        "aiff", "mid", "midi"
+    )
 
     /**
-     * Scans the local Download folder on device storage:
-     * Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+     * Scans local storage directories for Quran audio/video files.
      * 100% Offline with zero internet or mock data.
      */
     suspend fun scanDownloadFolder(context: Context): List<AudioTrack> = withContext(Dispatchers.IO) {
@@ -25,26 +28,45 @@ object QuranScanner {
         val seenPaths = mutableSetOf<String>()
 
         try {
-            // Primary standard directory for Android TV / Android 9
-            val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val scanDirs = mutableListOf<File>()
 
-            if (downloadDir.exists() && downloadDir.isDirectory) {
-                scanDirectory(downloadDir, tracks, seenPaths)
-            } else {
-                // Secondary check for standard paths if directory reference differs
-                val fallbackDirs = listOf(
-                    File("/storage/emulated/0/Download"),
-                    File(Environment.getExternalStorageDirectory(), "Download"),
-                    File("/sdcard/Download")
-                )
-                for (dir in fallbackDirs) {
-                    if (dir.exists() && dir.isDirectory) {
-                        scanDirectory(dir, tracks, seenPaths)
-                    }
+            // Add standard Android public directories
+            try {
+                scanDirs.add(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS))
+                scanDirs.add(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC))
+                scanDirs.add(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES))
+                scanDirs.add(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS))
+            } catch (e: Exception) {
+                Log.w(TAG, "Error getting public directories: ${e.message}")
+            }
+
+            // Fallback & common custom Quran folder locations
+            val fallbackPaths = listOf(
+                "/storage/emulated/0/Download",
+                "/storage/emulated/0/Music",
+                "/storage/emulated/0/Movies",
+                "/storage/emulated/0/Documents",
+                "/storage/emulated/0/Quran",
+                "/storage/emulated/0/القرآن الكريم",
+                "/sdcard/Download",
+                "/sdcard/Music",
+                "/sdcard/Quran"
+            )
+
+            for (path in fallbackPaths) {
+                val f = File(path)
+                if (f.exists() && f.isDirectory && !scanDirs.contains(f)) {
+                    scanDirs.add(f)
+                }
+            }
+
+            for (dir in scanDirs) {
+                if (dir.exists() && dir.isDirectory) {
+                    scanDirectory(dir, tracks, seenPaths)
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error scanning Download folder: ${e.message}", e)
+            Log.e(TAG, "Error scanning storage directories: ${e.message}", e)
         }
 
         // Sort tracks naturally by surah number, then Arabic title
