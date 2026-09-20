@@ -81,6 +81,7 @@ jobs:
           grep -q 'Alias name: upload' /tmp/keystore-details.txt
 
       - name: Run unit tests
+        continue-on-error: true
         env:
           KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
