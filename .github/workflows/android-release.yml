@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 concurrency:
@@ -11,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-release-apk:
@@ -113,6 +115,24 @@ jobs:
           path: Quraan-TV-Lite.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Create or update GitHub Release for version tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" Quraan-TV-Lite.apk \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" Quraan-TV-Lite.apk \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Quraan-TV-Lite $GITHUB_REF_NAME" \
+              --generate-notes
+          fi
 
       - name: Remove temporary keystore
         if: always()
