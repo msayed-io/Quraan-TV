@@ -1,0 +1,21 @@
+<resources>
+    <string name="app_name">Quran TV Player</string>
+    <string name="quran_player_title">مشغل القرآن الكريم</string>
+    <string name="download_folder">مجلد Download</string>
+    <string name="no_audio_files">برجاء نقل ملفات القرآن الصوتية إلى مجلد Download بالشاشة</string>
+    <string name="scan_storage">إعادة فحص المجلد</string>
+    <string name="storage_permission_required">برجاء منح إذن الوصول إلى الذاكرة لقراءة ملفات القرآن من مجلد Download</string>
+    <string name="grant_permission">منح الإذن</string>
+    <string name="now_playing">يتلو الآن</string>
+    <string name="no_track_selected">اختر تلاوة من القائمة</string>
+    <string name="play">تشغيل</string>
+    <string name="pause">إيقاف مؤقت</string>
+    <string name="next">التالي</string>
+    <string name="previous">السابق</string>
+    <string name="repeat_mode">التكرار</string>
+    <string name="repeat_all">تكرار الكل</string>
+    <string name="repeat_one">تكرار التلاوة</string>
+    <string name="repeat_off">بدون تكرار</string>
+    <string name="audio_files_count">%1$d تلاوة</string>
+</resources>
+
