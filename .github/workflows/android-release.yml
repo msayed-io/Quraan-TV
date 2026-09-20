@@ -102,16 +102,15 @@ jobs:
           shopt -s nullglob
           apks=(app/build/outputs/apk/release/*.apk)
           (( ${#apks[@]} > 0 )) || { echo 'Release APK was not produced'; exit 1; }
-          for apk in "${apks[@]}"; do
-            echo "APK: $apk"
-            sha256sum "$apk"
-          done
+          cp "${apks[0]}" Quraan-TV-Lite.apk
+          echo "APK: Quraan-TV-Lite.apk"
+          sha256sum Quraan-TV-Lite.apk
 
       - name: Upload Release APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: quraan-tv-lite-release-apk
-          path: app/build/outputs/apk/release/*.apk
+          name: Quraan-TV-Lite
+          path: Quraan-TV-Lite.apk
           if-no-files-found: error
           retention-days: 14
 
