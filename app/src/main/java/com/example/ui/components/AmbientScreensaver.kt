@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,8 +31,10 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -92,68 +95,70 @@ fun AmbientScreensaver(
 
     val platinumWhite = Color(0xFFFAFAFA)
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Color.Black)
-            .focusRequester(focusRequester)
-            .focusable()
-            .onKeyEvent { event ->
-                if (event.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
-                    onDismiss()
-                    true
-                } else {
-                    false
-                }
-            },
-        contentAlignment = Alignment.Center
-    ) {
-        // Center-aligned Apple Watch / iOS Lockscreen Digital Clock
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
-            modifier = Modifier.padding(16.dp)
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .focusRequester(focusRequester)
+                .focusable()
+                .onKeyEvent { event ->
+                    if (event.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
+                        onDismiss()
+                        true
+                    } else {
+                        false
+                    }
+                },
+            contentAlignment = Alignment.Center
         ) {
-            // Hours
-            Text(
-                text = hoursText,
-                color = platinumWhite,
-                fontSize = 110.sp,
-                fontFamily = FontFamily.SansSerif,
-                fontWeight = FontWeight.Black,
-                letterSpacing = (-2).sp
-            )
+            // Center-aligned Apple Watch / iOS Lockscreen Digital Clock
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.padding(16.dp)
+            ) {
+                // Hours
+                Text(
+                    text = hoursText,
+                    color = platinumWhite,
+                    fontSize = 110.sp,
+                    fontFamily = FontFamily.SansSerif,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = (-2).sp
+                )
 
-            // Smoothly blinking colon :
-            Text(
-                text = ":",
-                color = platinumWhite,
-                fontSize = 105.sp,
-                fontFamily = FontFamily.SansSerif,
-                fontWeight = FontWeight.Black,
-                modifier = Modifier.alpha(colonAlpha)
-            )
+                // Smoothly blinking colon :
+                Text(
+                    text = ":",
+                    color = platinumWhite,
+                    fontSize = 105.sp,
+                    fontFamily = FontFamily.SansSerif,
+                    fontWeight = FontWeight.Black,
+                    modifier = Modifier.alpha(colonAlpha)
+                )
 
-            // Minutes
-            Text(
-                text = minutesText,
-                color = platinumWhite,
-                fontSize = 110.sp,
-                fontFamily = FontFamily.SansSerif,
-                fontWeight = FontWeight.Black,
-                letterSpacing = (-2).sp
-            )
+                // Minutes
+                Text(
+                    text = minutesText,
+                    color = platinumWhite,
+                    fontSize = 110.sp,
+                    fontFamily = FontFamily.SansSerif,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = (-2).sp
+                )
 
-            Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(16.dp))
 
-            // AM / PM indicator
-            Text(
-                text = amPmText,
-                color = platinumWhite.copy(alpha = 0.65f),
-                fontSize = 32.sp,
-                fontFamily = FontFamily.SansSerif,
-                fontWeight = FontWeight.Bold
-            )
+                // AM / PM indicator
+                Text(
+                    text = amPmText,
+                    color = platinumWhite.copy(alpha = 0.65f),
+                    fontSize = 32.sp,
+                    fontFamily = FontFamily.SansSerif,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }
