@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -72,6 +73,27 @@ import com.example.ui.theme.AppleTextPrimary
 import com.example.ui.theme.AppleTextSecondary
 import com.example.viewmodel.QuranPlayerViewModel
 
+import android.app.Activity
+import android.view.KeyEvent
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.text.input.ImeAction
+import com.example.ui.components.AmbientScreensaver
+import com.example.viewmodel.ViewMode
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+
 @Composable
 fun QuranTvMainScreen(
     viewModel: QuranPlayerViewModel,
@@ -80,7 +102,10 @@ fun QuranTvMainScreen(
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     val playPauseFocusRequester = remember { FocusRequester() }
+    val searchFocusRequester = remember { FocusRequester() }
     val listState = rememberLazyListState()
+
+    var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
     // Permission launcher for Storage
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -113,12 +138,49 @@ fun QuranTvMainScreen(
         }
     }
 
+    // Inactivity Ambient Screensaver Monitor (5 Minutes during playback)
+    LaunchedEffect(uiState.isPlaying) {
+        while (isActive) {
+            delay(10000L) // Check every 10 seconds
+            val now = System.currentTimeMillis()
+            if (uiState.isPlaying && (now - lastInteractionTime >= 300_000L) && !uiState.isScreensaverActive) {
+                viewModel.setScreensaverActive(true)
+            }
+        }
+    }
+
+    // Filter tracks based on ViewMode & Search Query
+    val filteredTracks = remember(uiState.tracks, uiState.favorites, uiState.currentViewMode, uiState.searchQuery) {
+        var list = uiState.tracks
+        if (uiState.currentViewMode == ViewMode.FAVORITES) {
+            list = list.filter { uiState.favorites.contains(it.filePath) }
+        }
+        if (uiState.searchQuery.isNotBlank()) {
+            val q = uiState.searchQuery.trim()
+            list = list.filter {
+                it.title.contains(q, ignoreCase = true) ||
+                it.surahNameArabic.contains(q, ignoreCase = true) ||
+                it.fileName.contains(q, ignoreCase = true)
+            }
+        }
+        list
+    }
+
     // RTL Layout Direction for Quran TV interface
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         Box(
             modifier = modifier
                 .fillMaxSize()
                 .background(AppleBaseBackground)
+                .onKeyEvent {
+                    lastInteractionTime = System.currentTimeMillis()
+                    if (uiState.isScreensaverActive) {
+                        viewModel.setScreensaverActive(false)
+                        true
+                    } else {
+                        false
+                    }
+                }
                 .padding(horizontal = 24.dp, vertical = 18.dp)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
@@ -130,14 +192,14 @@ fun QuranTvMainScreen(
                     horizontalArrangement = Arrangement.spacedBy(22.dp)
                 ) {
                     // =========================================================================
-                    // 1. RIGHT SIDE: Floating Apple Capsules & Magnetic Dissolve Tracklist
+                    // 1. RIGHT SIDE: Floating Apple Capsules, Header & Tracklist
                     // =========================================================================
                     Box(
                         modifier = Modifier
                             .weight(1.15f)
                             .fillMaxHeight()
                     ) {
-                        // Tracklist body (Scrolls smoothly underneath the floating top capsules)
+                        // Tracklist body
                         if (uiState.isLoadingFiles) {
                             Box(
                                 modifier = Modifier.fillMaxSize(),
@@ -157,8 +219,8 @@ fun QuranTvMainScreen(
                                     )
                                 }
                             }
-                        } else if (uiState.tracks.isEmpty()) {
-                            // Empty state: exact required text
+                        } else if (filteredTracks.isEmpty()) {
+                            // Empty state
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
@@ -178,7 +240,9 @@ fun QuranTvMainScreen(
                                     )
                                     Spacer(modifier = Modifier.height(14.dp))
                                     Text(
-                                        text = stringResource(R.string.no_audio_files),
+                                        text = if (uiState.currentViewMode == ViewMode.FAVORITES) "لا توجد تلاوات في المفضلة"
+                                               else if (uiState.searchQuery.isNotBlank()) "لا توجد نتائج مطابقة للبحث"
+                                               else stringResource(R.string.no_audio_files),
                                         color = AppleTextPrimary,
                                         fontSize = 16.sp,
                                         fontWeight = FontWeight.Bold,
@@ -186,25 +250,35 @@ fun QuranTvMainScreen(
                                         style = androidx.compose.ui.text.TextStyle(textDirection = TextDirection.ContentOrRtl)
                                     )
                                     Spacer(modifier = Modifier.height(18.dp))
-                                    FocusableCapsuleButton(
-                                        onClick = { viewModel.loadAudioFiles() },
-                                        icon = Icons.Default.Refresh,
-                                        label = stringResource(R.string.scan_storage),
-                                        isDiskStyle = true,
-                                        testTag = "btn_empty_refresh"
-                                    )
+                                    if (uiState.currentViewMode == ViewMode.FAVORITES) {
+                                        FocusableCapsuleButton(
+                                            onClick = { viewModel.setViewMode(ViewMode.ALL) },
+                                            icon = Icons.Default.Close,
+                                            label = "العودة للتلاوات العامة",
+                                            isPrimary = true,
+                                            testTag = "btn_empty_fav_back"
+                                        )
+                                    } else {
+                                        FocusableCapsuleButton(
+                                            onClick = { viewModel.loadAudioFiles() },
+                                            icon = Icons.Default.Refresh,
+                                            label = stringResource(R.string.scan_storage),
+                                            isDiskStyle = true,
+                                            testTag = "btn_empty_refresh"
+                                        )
+                                    }
                                 }
                             }
                         } else {
-                            // Scrollable list passing underneath the floating capsules
+                            // Scrollable list passing underneath floating header
                             LazyColumn(
                                 state = listState,
                                 modifier = Modifier.fillMaxSize(),
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                                contentPadding = PaddingValues(top = 58.dp, bottom = 28.dp)
+                                contentPadding = PaddingValues(top = 62.dp, bottom = 28.dp)
                             ) {
                                 itemsIndexed(
-                                    items = uiState.tracks,
+                                    items = filteredTracks,
                                     key = { _, track -> track.id }
                                 ) { index, track ->
                                     TrackCapsuleItem(
@@ -212,13 +286,15 @@ fun QuranTvMainScreen(
                                         isSelected = uiState.currentTrack?.id == track.id,
                                         isPlaying = uiState.isPlaying && uiState.currentTrack?.id == track.id,
                                         index = index,
-                                        onClick = { viewModel.selectAndPlayTrack(track) }
+                                        isFavorite = uiState.favorites.contains(track.filePath),
+                                        onClick = { viewModel.selectAndPlayTrack(track) },
+                                        onToggleFavorite = { viewModel.toggleFavorite(track) }
                                     )
                                 }
                             }
                         }
 
-                        // A) Apple Top Magnetic Blur & Vignette Backdrop (Gradual soft fade from solid black to transparent)
+                        // Top Gradient Blur
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -236,7 +312,7 @@ fun QuranTvMainScreen(
                                 )
                         )
 
-                        // B) Apple Bottom Magnetic Vignette Backdrop (Gentle dissolve as items reach bottom)
+                        // Bottom Gradient Vignette
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -253,29 +329,169 @@ fun QuranTvMainScreen(
                                 )
                         )
 
-                        // C) Floating Pinned Header Capsules (Pure Apple HIG Floating System)
-                        Row(
+                        // Floating Header System
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .align(Alignment.TopCenter)
-                                .padding(horizontal = 6.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                                .padding(horizontal = 4.dp, vertical = 4.dp)
                         ) {
-                            // Right Floating Capsule: Title only (No icons, no bulky descriptions)
-                            AppleFloatingCapsule(
-                                text = "التلاوات",
-                                fontSize = 14,
-                                fontWeight = FontWeight.Bold
-                            )
+                            androidx.compose.animation.AnimatedVisibility(
+                                visible = uiState.isSearchActive,
+                                enter = fadeIn(),
+                                exit = fadeOut()
+                            ) {
+                                // Full-width Capsule Search Bar
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(48.dp)
+                                        .clip(RoundedCornerShape(24.dp))
+                                        .background(AppleTertiaryBackground)
+                                        .border(BorderStroke(1.5.dp, Color.White), RoundedCornerShape(24.dp))
+                                        .padding(horizontal = 14.dp),
+                                    contentAlignment = Alignment.CenterStart
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxSize(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.weight(1f),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Search,
+                                                contentDescription = "البحث",
+                                                tint = AppleTextPrimary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            BasicTextField(
+                                                value = uiState.searchQuery,
+                                                onValueChange = { viewModel.setSearchQuery(it) },
+                                                singleLine = true,
+                                                textStyle = androidx.compose.ui.text.TextStyle(
+                                                    color = AppleTextPrimary,
+                                                    fontSize = 15.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    textDirection = TextDirection.ContentOrRtl
+                                                ),
+                                                cursorBrush = SolidColor(AppleTextPrimary),
+                                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                                keyboardActions = KeyboardActions(onSearch = { }),
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .focusRequester(searchFocusRequester),
+                                                decorationBox = { innerTextField ->
+                                                    if (uiState.searchQuery.isEmpty()) {
+                                                        Text(
+                                                            text = "ابحث عن سورة أو قارئ...",
+                                                            color = AppleTextSecondary,
+                                                            fontSize = 14.sp
+                                                        )
+                                                    }
+                                                    innerTextField()
+                                                }
+                                            )
+                                        }
 
-                            // Left Floating Capsule: Count badge only
-                            AppleFloatingCapsule(
-                                text = "${uiState.tracks.size} تلاوة",
-                                fontSize = 12,
-                                fontWeight = FontWeight.Medium,
-                                textColor = AppleTextSecondary
-                            )
+                                        FocusableCapsuleButton(
+                                            onClick = { viewModel.toggleSearchActive(false) },
+                                            icon = Icons.Default.Close,
+                                            contentDescription = "إغلاق البحث",
+                                            buttonSize = 32.dp,
+                                            iconSize = 18.dp,
+                                            shape = CircleShape,
+                                            testTag = "btn_close_search"
+                                        )
+                                    }
+                                }
+
+                                LaunchedEffect(Unit) {
+                                    delay(100L)
+                                    searchFocusRequester.requestFocus()
+                                }
+                            }
+
+                            androidx.compose.animation.AnimatedVisibility(
+                                visible = !uiState.isSearchActive,
+                                enter = fadeIn(),
+                                exit = fadeOut()
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    // Title Capsule (التلاوات or المفضلة - Pure Title Only)
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(24.dp))
+                                            .background(AppleTertiaryBackground)
+                                            .border(BorderStroke(1.dp, AppleSubtleBorder), RoundedCornerShape(24.dp))
+                                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                                    ) {
+                                        Text(
+                                            text = if (uiState.currentViewMode == ViewMode.FAVORITES) "المفضلة" else "التلاوات",
+                                            color = AppleTextPrimary,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+
+                                    // Standalone Opposite Floating Capsule (Search & Favorites Icons in ViewMode.ALL, or Circular Exit Capsule in ViewMode.FAVORITES)
+                                    if (uiState.currentViewMode == ViewMode.ALL) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(24.dp))
+                                                .background(AppleTertiaryBackground)
+                                                .border(BorderStroke(1.dp, AppleSubtleBorder), RoundedCornerShape(24.dp))
+                                                .padding(horizontal = 6.dp, vertical = 4.dp)
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                // 1. Search Icon Button (Swapped to first position)
+                                                FocusableCapsuleButton(
+                                                    onClick = { viewModel.toggleSearchActive(true) },
+                                                    icon = Icons.Default.Search,
+                                                    contentDescription = "البحث",
+                                                    buttonSize = 32.dp,
+                                                    iconSize = 18.dp,
+                                                    shape = CircleShape,
+                                                    testTag = "btn_header_search"
+                                                )
+
+                                                // 2. Favorites Heart Icon Button (Swapped to second position)
+                                                FocusableCapsuleButton(
+                                                    onClick = { viewModel.setViewMode(ViewMode.FAVORITES) },
+                                                    icon = if (uiState.favorites.isNotEmpty()) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                                    contentDescription = "عرض المفضلة",
+                                                    buttonSize = 32.dp,
+                                                    iconSize = 18.dp,
+                                                    shape = CircleShape,
+                                                    testTag = "btn_header_fav"
+                                                )
+                                            }
+                                        }
+                                    } else {
+                                        // Circular Floating Exit Capsule Button (Icon-only, no text label)
+                                        FocusableCapsuleButton(
+                                            onClick = { viewModel.setViewMode(ViewMode.ALL) },
+                                            icon = Icons.Default.Close,
+                                            contentDescription = "العودة للتلاوات العامة",
+                                            isPrimary = true,
+                                            buttonSize = 38.dp,
+                                            iconSize = 20.dp,
+                                            shape = CircleShape,
+                                            testTag = "btn_exit_fav"
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -291,6 +507,11 @@ fun QuranTvMainScreen(
                         onCycleRepeat = { viewModel.cycleRepeatMode() },
                         onToggleShuffle = { viewModel.toggleShuffle() },
                         onRefreshFiles = { viewModel.loadAudioFiles() },
+                        onSetSleepTimer = { mins ->
+                            viewModel.setSleepTimer(mins) {
+                                (context as? Activity)?.finish()
+                            }
+                        },
                         playPauseFocusRequester = playPauseFocusRequester,
                         modifier = Modifier
                             .weight(0.85f)
@@ -347,7 +568,7 @@ fun QuranTvMainScreen(
                     }
                 }
 
-                // Error Message Bar (Apple HIG Style)
+                // Error Message Bar
                 AnimatedVisibility(
                     visible = uiState.errorMessage != null,
                     enter = fadeIn(),
@@ -388,6 +609,19 @@ fun QuranTvMainScreen(
                         }
                     }
                 }
+            }
+
+            // Full Overlay Ambient Screensaver
+            AnimatedVisibility(
+                visible = uiState.isScreensaverActive,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                AmbientScreensaver(
+                    trackTitle = uiState.currentTrack?.title ?: "",
+                    progress = uiState.progress,
+                    onDismiss = { viewModel.setScreensaverActive(false) }
+                )
             }
         }
     }

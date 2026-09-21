@@ -25,6 +25,17 @@ data class AudioTrack(
         }
 
     companion object {
+        fun formatSizeBytes(sizeBytes: Long): String {
+            if (sizeBytes <= 0) return ""
+            val mb = sizeBytes / (1024.0 * 1024.0)
+            return if (mb >= 1.0) {
+                String.format("%.1f MB", mb)
+            } else {
+                val kb = sizeBytes / 1024.0
+                String.format("%.0f KB", kb)
+            }
+        }
+
         fun formatDuration(ms: Long): String {
             if (ms <= 0) return "00:00"
             val totalSeconds = ms / 1000

@@ -63,12 +63,17 @@ import com.example.ui.theme.AppleTextPrimary
 import com.example.ui.theme.AppleTextSecondary
 import com.example.ui.theme.AppleTextTertiary
 
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material3.IconButton
+
 /**
  * Apple Fluid Interactive Track Capsule Item
  * Features:
  * 1. The Elastic Pinch: Scale down to 0.96 on press, bounce back on release
  * 2. Focus Glow & Specular Hairline: Elevated 2dp white focus outline on TV Remote focus
  * 3. Shared Element State Transition: Morphing audio equalizer & badge colors
+ * 4. Favorites support: Long press OK on remote or heart button click toggles favorite status
  */
 @Composable
 fun TrackCapsuleItem(
@@ -77,7 +82,9 @@ fun TrackCapsuleItem(
     isPlaying: Boolean,
     index: Int,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isFavorite: Boolean = false,
+    onToggleFavorite: (() -> Unit)? = null
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
@@ -139,14 +146,22 @@ fun TrackCapsuleItem(
             .border(border, shape)
             .focusable(interactionSource = interactionSource)
             .onKeyEvent { keyEvent ->
-                if (keyEvent.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
-                    when (keyEvent.nativeKeyEvent.keyCode) {
+                val nativeEvent = keyEvent.nativeKeyEvent
+                if (nativeEvent.action == KeyEvent.ACTION_DOWN) {
+                    when (nativeEvent.keyCode) {
                         KeyEvent.KEYCODE_DPAD_CENTER,
                         KeyEvent.KEYCODE_ENTER,
                         KeyEvent.KEYCODE_NUMPAD_ENTER,
                         KeyEvent.KEYCODE_BUTTON_A -> {
-                            onClick()
-                            true
+                            if (nativeEvent.isLongPress || nativeEvent.repeatCount > 10) {
+                                onToggleFavorite?.invoke()
+                                true
+                            } else if (nativeEvent.repeatCount == 0) {
+                                onClick()
+                                true
+                            } else {
+                                false
+                            }
                         }
                         else -> false
                     }
@@ -243,14 +258,28 @@ fun TrackCapsuleItem(
                 )
             }
 
-            // Duration badge
-            if (track.durationMs > 0) {
-                Text(
-                    text = formatDuration(track.durationMs),
-                    color = if (isFocused) AppleTextSecondary else AppleTextTertiary,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium
-                )
+            // Favorite Icon & Duration Badge
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (isFavorite) {
+                    Icon(
+                        imageVector = Icons.Default.Favorite,
+                        contentDescription = "المفضلة",
+                        tint = Color(0xFFFF3B30),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                if (track.durationMs > 0) {
+                    Text(
+                        text = formatDuration(track.durationMs),
+                        color = if (isFocused) AppleTextSecondary else AppleTextTertiary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
         }
     }

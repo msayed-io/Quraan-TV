@@ -1,7 +1,9 @@
 package com.example.ui.components
 
+import android.graphics.Bitmap
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -35,13 +37,19 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -52,6 +60,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
+import com.example.data.ArtworkExtractor
 import com.example.data.AudioTrack
 import com.example.data.RepeatMode
 import com.example.ui.theme.AppleProgressBg
@@ -66,6 +75,9 @@ import com.example.ui.theme.AppleTextSecondary
 import com.example.ui.theme.AppleTextTertiary
 import com.example.viewmodel.QuranPlayerUiState
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.material.icons.filled.Timer
+
 @Composable
 fun PlayerControlPanel(
     state: QuranPlayerUiState,
@@ -76,10 +88,24 @@ fun PlayerControlPanel(
     onCycleRepeat: () -> Unit,
     onToggleShuffle: () -> Unit,
     onRefreshFiles: () -> Unit,
+    onSetSleepTimer: ((Int?) -> Unit)? = null,
     playPauseFocusRequester: FocusRequester? = null,
     modifier: Modifier = Modifier
 ) {
     val track = state.currentTrack
+    var showSleepTimerOptions by remember { mutableStateOf(false) }
+
+    // Asynchronous embedded artwork & video thumbnail extraction
+    var artworkBitmap by remember(track?.filePath) { mutableStateOf<Bitmap?>(null) }
+
+    LaunchedEffect(track?.filePath) {
+        val path = track?.filePath
+        if (!path.isNullOrBlank()) {
+            artworkBitmap = ArtworkExtractor.getArtwork(path)
+        } else {
+            artworkBitmap = null
+        }
+    }
 
     Column(
         modifier = modifier
@@ -102,74 +128,123 @@ fun PlayerControlPanel(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Header Bar
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(34.dp)
-                            .clip(CircleShape)
-                            .background(AppleTertiaryBackground)
-                            .border(BorderStroke(1.dp, AppleSubtleBorder), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.GraphicEq,
-                            contentDescription = stringResource(R.string.quran_player_title),
-                            tint = AppleTextPrimary,
-                            modifier = Modifier.size(18.dp)
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(AppleTertiaryBackground)
+                                .border(BorderStroke(1.dp, AppleSubtleBorder), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.GraphicEq,
+                                contentDescription = stringResource(R.string.quran_player_title),
+                                tint = AppleTextPrimary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = stringResource(R.string.quran_player_title),
+                            color = AppleTextPrimary,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
                         )
                     }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = stringResource(R.string.quran_player_title),
-                        color = AppleTextPrimary,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+
+                    // Status Badge, Sleep Timer Clock Icon & Quick Refresh
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Sleep Timer Clock Button
+                        val hasTimer = state.sleepTimerRemainingSeconds > 0
+                        val timerLabel = if (hasTimer) {
+                            val m = state.sleepTimerRemainingSeconds / 60
+                            val s = state.sleepTimerRemainingSeconds % 60
+                            String.format("%02d:%02d", m, s)
+                        } else null
+
+                        FocusableCapsuleButton(
+                            onClick = { showSleepTimerOptions = !showSleepTimerOptions },
+                            icon = Icons.Default.Timer,
+                            label = timerLabel,
+                            contentDescription = "مؤقت النوم",
+                            isActiveToggle = hasTimer,
+                            buttonSize = 34.dp,
+                            iconSize = 16.dp,
+                            shape = CircleShape,
+                            testTag = "btn_sleep_timer"
+                        )
+
+                        // Compact Refresh button in header
+                        FocusableCapsuleButton(
+                            onClick = onRefreshFiles,
+                            icon = Icons.Default.Refresh,
+                            contentDescription = "فحص التنزيلات",
+                            buttonSize = 34.dp,
+                            iconSize = 16.dp,
+                            shape = CircleShape,
+                            testTag = "btn_player_refresh"
+                        )
+                    }
                 }
 
-                // Status Badge & Quick Refresh
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+                // Sleep Timer Dropdown Options Row
+                AnimatedVisibility(visible = showSleepTimerOptions) {
+                    Spacer(modifier = Modifier.height(10.dp))
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(50))
-                            .background(if (state.isPlaying) AppleQuaternaryBackground else AppleTertiaryBackground)
-                            .border(
-                                BorderStroke(0.8.dp, AppleSeparator),
-                                RoundedCornerShape(50)
-                            )
-                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(AppleTertiaryBackground)
+                            .border(BorderStroke(1.dp, AppleSeparator), RoundedCornerShape(16.dp))
+                            .padding(horizontal = 8.dp, vertical = 6.dp)
                     ) {
-                        Text(
-                            text = when {
-                                state.isBuffering -> "جار التحميل..."
-                                state.isPlaying -> stringResource(R.string.now_playing)
-                                track != null -> "متوقف مؤقتاً"
-                                else -> "في الانتظار"
-                            },
-                            color = if (state.isPlaying) AppleTextPrimary else AppleTextSecondary,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            listOf(
+                                Pair(15, "15د"),
+                                Pair(30, "30د"),
+                                Pair(45, "45د"),
+                                Pair(60, "1س")
+                            ).forEach { (mins, labelStr) ->
+                                FocusableCapsuleButton(
+                                    onClick = {
+                                        onSetSleepTimer?.invoke(mins)
+                                        showSleepTimerOptions = false
+                                    },
+                                    label = labelStr,
+                                    isActiveToggle = state.sleepTimerMinutes == mins,
+                                    buttonSize = 32.dp,
+                                    shape = RoundedCornerShape(12.dp),
+                                    testTag = "btn_timer_$mins"
+                                )
+                            }
 
-                    // Compact Refresh button in header
-                    FocusableCapsuleButton(
-                        onClick = onRefreshFiles,
-                        icon = Icons.Default.Refresh,
-                        contentDescription = "فحص التنزيلات",
-                        buttonSize = 34.dp,
-                        iconSize = 16.dp,
-                        shape = CircleShape,
-                        testTag = "btn_refresh_header"
-                    )
+                            FocusableCapsuleButton(
+                                onClick = {
+                                    onSetSleepTimer?.invoke(null)
+                                    showSleepTimerOptions = false
+                                },
+                                label = "إيقاف",
+                                isPrimary = state.sleepTimerMinutes == null,
+                                buttonSize = 32.dp,
+                                shape = RoundedCornerShape(12.dp),
+                                testTag = "btn_timer_off"
+                            )
+                        }
+                    }
                 }
             }
 
@@ -191,50 +266,58 @@ fun PlayerControlPanel(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    // Decorative Quran Surah Emblem
+                    // Embedded Album Art / Frame Box (Square card with downsampled artwork or fallback icon)
+                    val artwork = artworkBitmap
                     Box(
                         modifier = Modifier
-                            .size(56.dp)
-                            .clip(CircleShape)
+                            .size(110.dp)
+                            .clip(RoundedCornerShape(20.dp))
                             .background(AppleQuaternaryBackground)
-                            .border(BorderStroke(1.dp, AppleSeparator), CircleShape),
+                            .border(BorderStroke(1.dp, AppleSeparator), RoundedCornerShape(20.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         if (state.isBuffering) {
                             CircularProgressIndicator(
-                                modifier = Modifier.size(28.dp),
+                                modifier = Modifier.size(32.dp),
                                 color = AppleTextPrimary,
                                 strokeWidth = 2.5.dp
+                            )
+                        } else if (artwork != null) {
+                            Image(
+                                bitmap = artwork.asImageBitmap(),
+                                contentDescription = "غلاف المقطع",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
                             )
                         } else {
                             Icon(
                                 imageVector = Icons.Default.MenuBook,
                                 contentDescription = null,
                                 tint = AppleTextPrimary,
-                                modifier = Modifier.size(28.dp)
+                                modifier = Modifier.size(42.dp)
                             )
                         }
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Surah Name (Pure #F5F5F5 Apple Heading)
+                    // Real File Name (Pure #F5F5F5 Apple Heading)
                     Text(
-                        text = track?.surahNameArabic ?: stringResource(R.string.no_track_selected),
+                        text = track?.title ?: stringResource(R.string.no_track_selected),
                         color = AppleTextPrimary,
-                        fontSize = 24.sp,
+                        fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         style = androidx.compose.ui.text.TextStyle(textDirection = TextDirection.ContentOrRtl)
                     )
 
                     Spacer(modifier = Modifier.height(6.dp))
 
-                    // Reciter Subtitle (Apple System Gray #8E8E93)
+                    // Subtitle (Format / Size / Folder)
                     Text(
-                        text = track?.reciterOrSubtitle ?: "اختر تلاوة من القائمة لبدء الاستماع",
+                        text = track?.reciterOrSubtitle ?: "اختر ملفاً من القائمة لبدء الاستماع",
                         color = AppleTextSecondary,
                         fontSize = 13.sp,
                         textAlign = TextAlign.Center,
@@ -242,18 +325,6 @@ fun PlayerControlPanel(
                         overflow = TextOverflow.Ellipsis,
                         style = androidx.compose.ui.text.TextStyle(textDirection = TextDirection.ContentOrRtl)
                     )
-
-                    if (track != null && track.fileName.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = track.fileName,
-                            color = AppleTextTertiary,
-                            fontSize = 11.sp,
-                            textAlign = TextAlign.Center,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
                 }
             }
         }

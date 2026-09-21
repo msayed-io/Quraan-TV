@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.AudioTrack
+import com.example.data.PreferencesManager
 import com.example.data.QuranScanner
 import com.example.data.RepeatMode
 import com.example.player.QuranAudioPlayer
@@ -15,6 +16,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+
+enum class ViewMode {
+    ALL,
+    FAVORITES
+}
 
 data class QuranPlayerUiState(
     val tracks: List<AudioTrack> = emptyList(),
@@ -29,15 +35,30 @@ data class QuranPlayerUiState(
     val isShuffle: Boolean = false,
     val hasStoragePermission: Boolean = false,
     val isLoadingFiles: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    
+    // New Advanced Features State
+    val favorites: Set<String> = emptySet(),
+    val currentViewMode: ViewMode = ViewMode.ALL,
+    val searchQuery: String = "",
+    val isSearchActive: Boolean = false,
+    val sleepTimerMinutes: Int? = null,
+    val sleepTimerRemainingSeconds: Int = 0,
+    val isScreensaverActive: Boolean = false
 )
 
 class QuranPlayerViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val _uiState = MutableStateFlow(QuranPlayerUiState())
+    private val prefsManager = PreferencesManager(application.applicationContext)
+
+    private val _uiState = MutableStateFlow(
+        QuranPlayerUiState(favorites = prefsManager.getFavorites())
+    )
     val uiState: StateFlow<QuranPlayerUiState> = _uiState.asStateFlow()
 
     private var progressJob: Job? = null
+    private var sleepTimerJob: Job? = null
+    private var onSleepFinishedCallback: (() -> Unit)? = null
 
     private val player = QuranAudioPlayer(
         context = application.applicationContext,
@@ -66,17 +87,46 @@ class QuranPlayerViewModel(application: Application) : AndroidViewModel(applicat
             _uiState.update { it.copy(isLoadingFiles = true, errorMessage = null) }
             try {
                 val scannedTracks = QuranScanner.scanDownloadFolder(getApplication())
+                val bookmark = prefsManager.getBookmark()
+                
+                var restoredTrack: AudioTrack? = null
+                var restoredPosMs = 0L
+
+                if (bookmark != null) {
+                    restoredTrack = scannedTracks.find { it.filePath == bookmark.first }
+                    if (restoredTrack != null) {
+                        restoredPosMs = bookmark.second
+                    }
+                }
+
                 _uiState.update { state ->
                     val selected = state.currentTrack?.let { curr ->
                         scannedTracks.find { it.filePath == curr.filePath }
-                    } ?: scannedTracks.firstOrNull()
+                    } ?: restoredTrack ?: scannedTracks.firstOrNull()
+
                     val selectedIndex = if (selected != null) scannedTracks.indexOfFirst { it.id == selected.id } else -1
+                    val posMs = if (selected?.filePath == restoredTrack?.filePath) restoredPosMs else 0L
+                    val duration = selected?.durationMs ?: 0L
+                    val prog = if (duration > 0) (posMs.toFloat() / duration).coerceIn(0f, 1f) else 0f
+
                     state.copy(
                         tracks = scannedTracks,
                         currentTrack = selected,
                         currentTrackIndex = selectedIndex,
+                        currentPositionMs = posMs,
+                        durationMs = duration,
+                        progress = prog,
                         isLoadingFiles = false
                     )
+                }
+
+                // If bookmark track was restored, seek player to saved position
+                if (restoredTrack != null && restoredPosMs > 0) {
+                    player.playTrack(restoredTrack) {
+                        player.seekTo(restoredPosMs)
+                        player.pause()
+                        _uiState.update { it.copy(isPlaying = false, isBuffering = false) }
+                    }
                 }
             } catch (e: Exception) {
                 _uiState.update {
@@ -91,6 +141,7 @@ class QuranPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun selectAndPlayTrack(track: AudioTrack) {
+        saveBookmark()
         val tracks = _uiState.value.tracks
         val index = tracks.indexOfFirst { it.id == track.id }
         _uiState.update {
@@ -130,6 +181,7 @@ class QuranPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         if (state.isPlaying) {
             player.pause()
+            saveBookmark()
             _uiState.update { it.copy(isPlaying = false) }
             stopProgressTracker()
         } else {
@@ -141,6 +193,93 @@ class QuranPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 _uiState.update { it.copy(isPlaying = true) }
                 startProgressTracker()
             }
+        }
+    }
+
+    // =========================================================================
+    // FAVORITES & VIEW MODE
+    // =========================================================================
+    fun toggleFavorite(track: AudioTrack) {
+        prefsManager.toggleFavorite(track.filePath)
+        _uiState.update { it.copy(favorites = prefsManager.getFavorites()) }
+    }
+
+    fun setViewMode(mode: ViewMode) {
+        _uiState.update { it.copy(currentViewMode = mode) }
+    }
+
+    // =========================================================================
+    // SEARCH PANEL
+    // =========================================================================
+    fun setSearchQuery(query: String) {
+        _uiState.update { it.copy(searchQuery = query) }
+    }
+
+    fun toggleSearchActive(active: Boolean) {
+        _uiState.update { 
+            it.copy(
+                isSearchActive = active,
+                searchQuery = if (!active) "" else it.searchQuery
+            ) 
+        }
+    }
+
+    // =========================================================================
+    // SLEEP TIMER
+    // =========================================================================
+    fun setSleepTimer(minutes: Int?, onFinish: (() -> Unit)? = null) {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        onSleepFinishedCallback = onFinish
+
+        if (minutes == null || minutes <= 0) {
+            _uiState.update { it.copy(sleepTimerMinutes = null, sleepTimerRemainingSeconds = 0) }
+            return
+        }
+
+        val totalSeconds = minutes * 60
+        _uiState.update { it.copy(sleepTimerMinutes = minutes, sleepTimerRemainingSeconds = totalSeconds) }
+
+        sleepTimerJob = viewModelScope.launch {
+            var remaining = totalSeconds
+            while (isActive && remaining > 0) {
+                delay(1000L)
+                remaining--
+                _uiState.update { it.copy(sleepTimerRemainingSeconds = remaining) }
+            }
+
+            if (remaining <= 0) {
+                // Sleep Timer Expired: stop playback safely and finish Activity
+                player.pause()
+                saveBookmark()
+                _uiState.update {
+                    it.copy(
+                        isPlaying = false,
+                        sleepTimerMinutes = null,
+                        sleepTimerRemainingSeconds = 0
+                    )
+                }
+                stopProgressTracker()
+                onSleepFinishedCallback?.invoke()
+            }
+        }
+    }
+
+    // =========================================================================
+    // SCREENSAVER
+    // =========================================================================
+    fun setScreensaverActive(active: Boolean) {
+        _uiState.update { it.copy(isScreensaverActive = active) }
+    }
+
+    // =========================================================================
+    // BOOKMARK SAVING
+    // =========================================================================
+    fun saveBookmark() {
+        val curr = _uiState.value.currentTrack ?: return
+        val pos = player.currentPosition
+        if (curr.filePath.isNotBlank() && pos >= 0) {
+            prefsManager.saveBookmark(curr.filePath, pos)
         }
     }
 
@@ -243,6 +382,7 @@ class QuranPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private fun startProgressTracker() {
         progressJob?.cancel()
         progressJob = viewModelScope.launch {
+            var ticks = 0
             while (isActive) {
                 val current = player.currentPosition
                 val total = player.duration.takeIf { it > 0 } ?: _uiState.value.durationMs
@@ -254,6 +394,10 @@ class QuranPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         durationMs = total,
                         progress = prog
                     )
+                }
+                ticks++
+                if (ticks % 10 == 0) { // Every 5 seconds (10 * 500ms)
+                    saveBookmark()
                 }
                 delay(500L) // Ultra-lightweight 500ms cycle for 1GB RAM TV
             }

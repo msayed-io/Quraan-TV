@@ -12,11 +12,11 @@ import java.io.File
 object QuranScanner {
     private const val TAG = "QuranScanner"
 
-    // All supported audio & video container extensions that can contain audio recitations
+    // All supported audio & video container extensions
     private val AUDIO_EXTENSIONS = setOf(
         "mp3", "wav", "m4a", "aac", "ogg", "flac", "opus",
         "mp4", "m4v", "mka", "webm", "3gp", "amr", "wma",
-        "aiff", "mid", "midi"
+        "aiff", "mid", "midi", "mkv", "avi", "mov", "ts"
     )
 
     /**
@@ -98,17 +98,13 @@ object QuranScanner {
 
     private fun extractTrackMetadata(file: File): AudioTrack {
         var durationMs = 0L
-        var metaTitle: String? = null
-        var metaArtist: String? = null
 
         val retriever = MediaMetadataRetriever()
         try {
             retriever.setDataSource(file.absolutePath)
             durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-            metaTitle = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
-            metaArtist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
         } catch (e: Exception) {
-            Log.w(TAG, "Metadata extraction failed for ${file.name}: ${e.message}")
+            Log.w(TAG, "Duration extraction failed for ${file.name}: ${e.message}")
         } finally {
             try {
                 retriever.release()
@@ -117,14 +113,25 @@ object QuranScanner {
             }
         }
 
-        val (surahName, subtitle) = QuranNamesHelper.parseSurahDetails(file.name, metaTitle)
-        val finalSubtitle = if (!metaArtist.isNullOrBlank() && metaArtist != "<unknown>") metaArtist else subtitle
+        // Read real file name from storage with extension removed
+        val realFileName = file.nameWithoutExtension.ifBlank { file.name }
+        val ext = file.extension.uppercase()
+        val formattedSize = AudioTrack.formatSizeBytes(file.length())
+        val parentFolder = file.parentFile?.name
+
+        val subtitle = if (!parentFolder.isNullOrBlank() && parentFolder !in listOf("Download", "Music", "Movies", "Documents", "Quran", "sdcard", "0")) {
+            "مجلد: $parentFolder • $ext"
+        } else if (formattedSize.isNotBlank()) {
+            "ملف $ext • $formattedSize"
+        } else {
+            "ملف $ext"
+        }
 
         return AudioTrack(
             id = "file_${file.absolutePath.hashCode()}",
-            title = surahName,
-            surahNameArabic = surahName,
-            reciterOrSubtitle = finalSubtitle,
+            title = realFileName,
+            surahNameArabic = realFileName,
+            reciterOrSubtitle = subtitle,
             fileName = file.name,
             filePath = file.absolutePath,
             uri = Uri.fromFile(file),
