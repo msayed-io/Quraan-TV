@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Quran TV Player"
+rootProject.name = "QURAN TV"
 
 include(":app")

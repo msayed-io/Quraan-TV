@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Quran TV Player</string>
+    <string name="app_name">QURAN TV</string>
     <string name="quran_player_title">مشغل القرآن الكريم</string>
     <string name="download_folder">مجلد Download</string>
     <string name="no_audio_files">برجاء نقل ملفات القرآن الصوتية إلى مجلد Download بالشاشة</string>
@@ -18,4 +18,3 @@
     <string name="repeat_off">بدون تكرار</string>
     <string name="audio_files_count">%1$d تلاوة</string>
 </resources>
-

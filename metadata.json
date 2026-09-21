@@ -1,7 +1,6 @@
 {
-  "name": "Quran TV Player",
+  "name": "QURAN TV",
   "description": "مشغل صوتيات القرآن الكريم المخصص للشاشات الذكية بنظام أندرويد 9 بتصميم راقٍ وخفيف",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
-
