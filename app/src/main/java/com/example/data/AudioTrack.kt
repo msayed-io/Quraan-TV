@@ -12,7 +12,8 @@ data class AudioTrack(
     val uri: Uri?,
     val durationMs: Long = 0L,
     val sizeBytes: Long = 0L,
-    val isSample: Boolean = false
+    val isSample: Boolean = false,
+    val reciterName: String = ""
 ) {
     val formattedDuration: String
         get() = formatDuration(durationMs)

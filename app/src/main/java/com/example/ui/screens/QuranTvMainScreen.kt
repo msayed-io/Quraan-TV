@@ -180,7 +180,8 @@ fun QuranTvMainScreen(
                 it.title.contains(q, ignoreCase = true) ||
                 it.surahNameArabic.contains(q, ignoreCase = true) ||
                 it.fileName.contains(q, ignoreCase = true) ||
-                it.reciterOrSubtitle.contains(q, ignoreCase = true)
+                it.reciterOrSubtitle.contains(q, ignoreCase = true) ||
+                it.reciterName.contains(q, ignoreCase = true)
             }
         }
         list

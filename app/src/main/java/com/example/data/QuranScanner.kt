@@ -138,8 +138,11 @@ object QuranScanner {
         val ext = file.extension.uppercase()
         val formattedSize = AudioTrack.formatSizeBytes(file.length())
         val parentFolder = file.parentFile?.name
+        val reciterName = ReciterCategorizer.extractReciterName(file.name)
 
-        val subtitle = if (!parentFolder.isNullOrBlank() && parentFolder !in listOf("Download", "Music", "Movies", "Documents", "Quran", "sdcard", "0")) {
+        val subtitle = if (reciterName.isNotBlank() && reciterName != "أخرى") {
+            if (formattedSize.isNotBlank()) "$reciterName • $ext • $formattedSize" else "$reciterName • $ext"
+        } else if (!parentFolder.isNullOrBlank() && parentFolder !in listOf("Download", "Music", "Movies", "Documents", "Quran", "sdcard", "0")) {
             "مجلد: $parentFolder • $ext"
         } else if (formattedSize.isNotBlank()) {
             "ملف $ext • $formattedSize"
@@ -157,7 +160,8 @@ object QuranScanner {
             uri = Uri.fromFile(file),
             durationMs = durationMs,
             sizeBytes = file.length(),
-            isSample = false
+            isSample = false,
+            reciterName = reciterName
         )
     }
 

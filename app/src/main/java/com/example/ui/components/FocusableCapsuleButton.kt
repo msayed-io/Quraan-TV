@@ -131,9 +131,9 @@ fun FocusableCapsuleButton(
     // 3. Specular Hairline & Glowing White Focus Ring (TV Optimizations)
     val border = when {
         isFocused -> BorderStroke(2.5.dp, Color.White)
-        isPrimary -> BorderStroke(1.dp, AppleSeparator)
+        isPrimary -> BorderStroke(1.5.dp, Color.White)
         isDiskStyle -> BorderStroke(1.dp, AppleSubtleBorder)
-        isActiveToggle -> BorderStroke(1.dp, AppleSeparator)
+        isActiveToggle -> BorderStroke(1.2.dp, Color.White)
         else -> BorderStroke(0.8.dp, Color.Transparent)
     }
 

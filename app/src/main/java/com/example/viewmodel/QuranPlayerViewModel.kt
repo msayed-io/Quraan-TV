@@ -143,9 +143,16 @@ class QuranPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     val duration = selected?.durationMs ?: 0L
                     val prog = if (duration > 0) (posMs.toFloat() / duration).coerceIn(0f, 1f) else 0f
 
+                    val validCategoryId = if (generatedCategories.any { it.id == state.selectedCategoryId }) {
+                        state.selectedCategoryId
+                    } else {
+                        ReciterCategorizer.ALL_CATEGORY_ID
+                    }
+
                     state.copy(
                         tracks = scannedTracks,
                         categories = generatedCategories,
+                        selectedCategoryId = validCategoryId,
                         currentTrack = selected,
                         currentTrackIndex = selectedIndex,
                         currentPositionMs = posMs,
