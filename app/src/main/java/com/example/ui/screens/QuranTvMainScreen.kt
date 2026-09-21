@@ -91,8 +91,11 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import com.example.data.ReciterCategorizer
 import com.example.ui.components.AmbientScreensaver
 import com.example.viewmodel.ViewMode
 import kotlinx.coroutines.delay
@@ -159,22 +162,31 @@ fun QuranTvMainScreen(
         }
     }
 
-    // Filter tracks based on ViewMode & Search Query
-    val filteredTracks = remember(uiState.tracks, uiState.favorites, uiState.currentViewMode, uiState.searchQuery) {
+    // Filter tracks based on ViewMode, Reciter Category & Search Query
+    val filteredTracks = remember(uiState.tracks, uiState.favorites, uiState.currentViewMode, uiState.searchQuery, uiState.selectedCategoryId, uiState.categories) {
         var list = uiState.tracks
         if (uiState.currentViewMode == ViewMode.FAVORITES) {
             list = list.filter { uiState.favorites.contains(it.filePath) }
+        }
+        if (uiState.currentViewMode == ViewMode.ALL && uiState.selectedCategoryId != "all") {
+            val cat = uiState.categories.find { it.id == uiState.selectedCategoryId }
+            if (cat != null) {
+                list = list.filter { ReciterCategorizer.isTrackInCategory(it, cat) }
+            }
         }
         if (uiState.searchQuery.isNotBlank()) {
             val q = uiState.searchQuery.trim()
             list = list.filter {
                 it.title.contains(q, ignoreCase = true) ||
                 it.surahNameArabic.contains(q, ignoreCase = true) ||
-                it.fileName.contains(q, ignoreCase = true)
+                it.fileName.contains(q, ignoreCase = true) ||
+                it.reciterOrSubtitle.contains(q, ignoreCase = true)
             }
         }
         list
     }
+
+    val showCategoryTabs = !uiState.isSearchActive && uiState.currentViewMode == ViewMode.ALL && uiState.categories.size > 1
 
     // RTL Layout Direction for Quran TV interface
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
@@ -285,7 +297,7 @@ fun QuranTvMainScreen(
                                 state = listState,
                                 modifier = Modifier.fillMaxSize(),
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                                contentPadding = PaddingValues(top = 62.dp, bottom = 28.dp)
+                                contentPadding = PaddingValues(top = if (showCategoryTabs) 104.dp else 62.dp, bottom = 28.dp)
                             ) {
                                 itemsIndexed(
                                     items = filteredTracks,
@@ -308,7 +320,7 @@ fun QuranTvMainScreen(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(74.dp)
+                                .height(if (showCategoryTabs) 116.dp else 74.dp)
                                 .align(Alignment.TopCenter)
                                 .background(
                                     Brush.verticalGradient(
@@ -346,159 +358,185 @@ fun QuranTvMainScreen(
                                 .align(Alignment.TopCenter)
                                 .padding(horizontal = 4.dp, vertical = 4.dp)
                         ) {
-                            androidx.compose.animation.AnimatedVisibility(
-                                visible = uiState.isSearchActive,
-                                enter = fadeIn(),
-                                exit = fadeOut()
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                // Full-width Capsule Search Bar
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(48.dp)
-                                        .clip(RoundedCornerShape(24.dp))
-                                        .background(AppleTertiaryBackground)
-                                        .border(BorderStroke(1.5.dp, Color.White), RoundedCornerShape(24.dp))
-                                        .padding(horizontal = 14.dp),
-                                    contentAlignment = Alignment.CenterStart
+                                androidx.compose.animation.AnimatedVisibility(
+                                    visible = uiState.isSearchActive,
+                                    enter = fadeIn(),
+                                    exit = fadeOut()
+                                ) {
+                                    // Full-width Capsule Search Bar
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(48.dp)
+                                            .clip(RoundedCornerShape(24.dp))
+                                            .background(AppleTertiaryBackground)
+                                            .border(BorderStroke(1.5.dp, Color.White), RoundedCornerShape(24.dp))
+                                            .padding(horizontal = 14.dp),
+                                        contentAlignment = Alignment.CenterStart
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxSize(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.weight(1f),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Search,
+                                                    contentDescription = "البحث",
+                                                    tint = AppleTextPrimary,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(10.dp))
+                                                BasicTextField(
+                                                    value = uiState.searchQuery,
+                                                    onValueChange = { viewModel.setSearchQuery(it) },
+                                                    singleLine = true,
+                                                    textStyle = androidx.compose.ui.text.TextStyle(
+                                                        color = AppleTextPrimary,
+                                                        fontSize = 15.sp,
+                                                        fontWeight = FontWeight.Medium,
+                                                        textDirection = TextDirection.ContentOrRtl
+                                                    ),
+                                                    cursorBrush = SolidColor(AppleTextPrimary),
+                                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                                    keyboardActions = KeyboardActions(onSearch = { }),
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .focusRequester(searchFocusRequester),
+                                                    decorationBox = { innerTextField ->
+                                                        if (uiState.searchQuery.isEmpty()) {
+                                                            Text(
+                                                                text = "ابحث عن سورة أو قارئ...",
+                                                                color = AppleTextSecondary,
+                                                                fontSize = 14.sp
+                                                            )
+                                                        }
+                                                        innerTextField()
+                                                    }
+                                                )
+                                            }
+
+                                            FocusableCapsuleButton(
+                                                onClick = { viewModel.toggleSearchActive(false) },
+                                                icon = Icons.Default.Close,
+                                                contentDescription = "إغلاق البحث",
+                                                buttonSize = 32.dp,
+                                                iconSize = 18.dp,
+                                                shape = CircleShape,
+                                                testTag = "btn_close_search"
+                                            )
+                                        }
+                                    }
+
+                                    LaunchedEffect(Unit) {
+                                        delay(100L)
+                                        searchFocusRequester.requestFocus()
+                                    }
+                                }
+
+                                androidx.compose.animation.AnimatedVisibility(
+                                    visible = !uiState.isSearchActive,
+                                    enter = fadeIn(),
+                                    exit = fadeOut()
                                 ) {
                                     Row(
-                                        modifier = Modifier.fillMaxSize(),
+                                        modifier = Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
-                                        Row(
-                                            modifier = Modifier.weight(1f),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Search,
-                                                contentDescription = "البحث",
-                                                tint = AppleTextPrimary,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(10.dp))
-                                            BasicTextField(
-                                                value = uiState.searchQuery,
-                                                onValueChange = { viewModel.setSearchQuery(it) },
-                                                singleLine = true,
-                                                textStyle = androidx.compose.ui.text.TextStyle(
-                                                    color = AppleTextPrimary,
-                                                    fontSize = 15.sp,
-                                                    fontWeight = FontWeight.Medium,
-                                                    textDirection = TextDirection.ContentOrRtl
-                                                ),
-                                                cursorBrush = SolidColor(AppleTextPrimary),
-                                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                                                keyboardActions = KeyboardActions(onSearch = { }),
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .focusRequester(searchFocusRequester),
-                                                decorationBox = { innerTextField ->
-                                                    if (uiState.searchQuery.isEmpty()) {
-                                                        Text(
-                                                            text = "ابحث عن سورة أو قارئ...",
-                                                            color = AppleTextSecondary,
-                                                            fontSize = 14.sp
-                                                        )
-                                                    }
-                                                    innerTextField()
-                                                }
-                                            )
-                                        }
-
-                                        FocusableCapsuleButton(
-                                            onClick = { viewModel.toggleSearchActive(false) },
-                                            icon = Icons.Default.Close,
-                                            contentDescription = "إغلاق البحث",
-                                            buttonSize = 32.dp,
-                                            iconSize = 18.dp,
-                                            shape = CircleShape,
-                                            testTag = "btn_close_search"
-                                        )
-                                    }
-                                }
-
-                                LaunchedEffect(Unit) {
-                                    delay(100L)
-                                    searchFocusRequester.requestFocus()
-                                }
-                            }
-
-                            androidx.compose.animation.AnimatedVisibility(
-                                visible = !uiState.isSearchActive,
-                                enter = fadeIn(),
-                                exit = fadeOut()
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    // Title Capsule (التلاوات or المفضلة - Pure Title Only)
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(24.dp))
-                                            .background(AppleTertiaryBackground)
-                                            .border(BorderStroke(1.dp, AppleSubtleBorder), RoundedCornerShape(24.dp))
-                                            .padding(horizontal = 16.dp, vertical = 8.dp)
-                                    ) {
-                                        Text(
-                                            text = if (uiState.currentViewMode == ViewMode.FAVORITES) "المفضلة" else "التلاوات",
-                                            color = AppleTextPrimary,
-                                            fontSize = 15.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-
-                                    // Standalone Opposite Floating Capsule (Search & Favorites Icons in ViewMode.ALL, or Circular Exit Capsule in ViewMode.FAVORITES)
-                                    if (uiState.currentViewMode == ViewMode.ALL) {
+                                        // Title Capsule (التلاوات or المفضلة - Pure Title Only)
                                         Box(
                                             modifier = Modifier
                                                 .clip(RoundedCornerShape(24.dp))
                                                 .background(AppleTertiaryBackground)
                                                 .border(BorderStroke(1.dp, AppleSubtleBorder), RoundedCornerShape(24.dp))
-                                                .padding(horizontal = 6.dp, vertical = 4.dp)
+                                                .padding(horizontal = 16.dp, vertical = 8.dp)
                                         ) {
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                            ) {
-                                                // 1. Search Icon Button (Swapped to first position)
-                                                FocusableCapsuleButton(
-                                                    onClick = { viewModel.toggleSearchActive(true) },
-                                                    icon = Icons.Default.Search,
-                                                    contentDescription = "البحث",
-                                                    buttonSize = 32.dp,
-                                                    iconSize = 18.dp,
-                                                    shape = CircleShape,
-                                                    testTag = "btn_header_search"
-                                                )
-
-                                                // 2. Favorites Heart Icon Button (Swapped to second position)
-                                                FocusableCapsuleButton(
-                                                    onClick = { viewModel.setViewMode(ViewMode.FAVORITES) },
-                                                    icon = if (uiState.favorites.isNotEmpty()) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                                                    contentDescription = "عرض المفضلة",
-                                                    buttonSize = 32.dp,
-                                                    iconSize = 18.dp,
-                                                    shape = CircleShape,
-                                                    testTag = "btn_header_fav"
-                                                )
-                                            }
+                                            Text(
+                                                text = if (uiState.currentViewMode == ViewMode.FAVORITES) "المفضلة" else "التلاوات",
+                                                color = AppleTextPrimary,
+                                                fontSize = 15.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
                                         }
-                                    } else {
-                                        // Circular Floating Exit Capsule Button (Icon-only, no text label)
-                                        FocusableCapsuleButton(
-                                            onClick = { viewModel.setViewMode(ViewMode.ALL) },
-                                            icon = Icons.Default.Close,
-                                            contentDescription = "العودة للتلاوات العامة",
-                                            isPrimary = true,
-                                            buttonSize = 38.dp,
-                                            iconSize = 20.dp,
-                                            shape = CircleShape,
-                                            testTag = "btn_exit_fav"
-                                        )
+
+                                        // Standalone Opposite Floating Capsule (Search & Favorites Icons in ViewMode.ALL, or Circular Exit Capsule in ViewMode.FAVORITES)
+                                        if (uiState.currentViewMode == ViewMode.ALL) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(24.dp))
+                                                    .background(AppleTertiaryBackground)
+                                                    .border(BorderStroke(1.dp, AppleSubtleBorder), RoundedCornerShape(24.dp))
+                                                    .padding(horizontal = 6.dp, vertical = 4.dp)
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                ) {
+                                                    // 1. Search Icon Button (Swapped to first position)
+                                                    FocusableCapsuleButton(
+                                                        onClick = { viewModel.toggleSearchActive(true) },
+                                                        icon = Icons.Default.Search,
+                                                        contentDescription = "البحث",
+                                                        buttonSize = 32.dp,
+                                                        iconSize = 18.dp,
+                                                        shape = CircleShape,
+                                                        testTag = "btn_header_search"
+                                                    )
+
+                                                    // 2. Favorites Heart Icon Button (Swapped to second position)
+                                                    FocusableCapsuleButton(
+                                                        onClick = { viewModel.setViewMode(ViewMode.FAVORITES) },
+                                                        icon = if (uiState.favorites.isNotEmpty()) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                                        contentDescription = "عرض المفضلة",
+                                                        buttonSize = 32.dp,
+                                                        iconSize = 18.dp,
+                                                        shape = CircleShape,
+                                                        testTag = "btn_header_fav"
+                                                    )
+                                                }
+                                            }
+                                        } else {
+                                            // Circular Floating Exit Capsule Button (Icon-only, no text label)
+                                            FocusableCapsuleButton(
+                                                onClick = { viewModel.setViewMode(ViewMode.ALL) },
+                                                icon = Icons.Default.Close,
+                                                contentDescription = "العودة للتلاوات العامة",
+                                                isPrimary = true,
+                                                buttonSize = 38.dp,
+                                                iconSize = 20.dp,
+                                                shape = CircleShape,
+                                                testTag = "btn_exit_fav"
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // Smart Reciter / Category Tabs (Horizontal Apple HIG Capsule row)
+                                if (showCategoryTabs) {
+                                    LazyRow(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 2.dp)
+                                    ) {
+                                        items(uiState.categories, key = { it.id }) { cat ->
+                                            val isSelected = uiState.selectedCategoryId == cat.id
+                                            FocusableCapsuleButton(
+                                                onClick = { viewModel.selectCategory(cat.id) },
+                                                label = "${cat.displayName} (${cat.trackCount})",
+                                                isPrimary = isSelected,
+                                                buttonSize = 34.dp,
+                                                shape = RoundedCornerShape(17.dp),
+                                                testTag = "tab_cat_${cat.id}"
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -517,6 +555,7 @@ fun QuranTvMainScreen(
                         onCycleRepeat = { viewModel.cycleRepeatMode() },
                         onToggleShuffle = { viewModel.toggleShuffle() },
                         onRefreshFiles = { viewModel.loadAudioFiles() },
+                        onToggleNightMode = { viewModel.toggleNightMode() },
                         onSetSleepTimer = { mins ->
                             viewModel.setSleepTimer(mins) {
                                 (context as? Activity)?.finish()

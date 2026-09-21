@@ -6,8 +6,12 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.AudioTrack
 import com.example.data.PreferencesManager
 import com.example.data.QuranScanner
+import com.example.data.ReciterCategorizer
+import com.example.data.ReciterCategory
 import com.example.data.RepeatMode
+import com.example.player.AudioServiceBridge
 import com.example.player.QuranAudioPlayer
+import com.example.player.QuranAudioService
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,7 +48,14 @@ data class QuranPlayerUiState(
     val isSearchActive: Boolean = false,
     val sleepTimerMinutes: Int? = null,
     val sleepTimerRemainingSeconds: Int = 0,
-    val isScreensaverActive: Boolean = false
+    val isScreensaverActive: Boolean = false,
+
+    // Smart Categorization
+    val categories: List<ReciterCategory> = emptyList(),
+    val selectedCategoryId: String = "all",
+
+    // Night Audio Mode (Vocal Booster)
+    val isNightMode: Boolean = false
 )
 
 class QuranPlayerViewModel(application: Application) : AndroidViewModel(application) {
@@ -52,7 +63,10 @@ class QuranPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val prefsManager = PreferencesManager(application.applicationContext)
 
     private val _uiState = MutableStateFlow(
-        QuranPlayerUiState(favorites = prefsManager.getFavorites())
+        QuranPlayerUiState(
+            favorites = prefsManager.getFavorites(),
+            isNightMode = prefsManager.isNightMode()
+        )
     )
     val uiState: StateFlow<QuranPlayerUiState> = _uiState.asStateFlow()
 
@@ -72,8 +86,24 @@ class QuranPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 )
             }
             stopProgressTracker()
+            QuranAudioService.updateService(getApplication(), _uiState.value.currentTrack, false)
         }
     )
+
+    init {
+        // Initialize player night mode state from preferences
+        val initialNightMode = prefsManager.isNightMode()
+        player.setNightMode(initialNightMode)
+
+        // Connect AudioServiceBridge for TV remote / status notification actions
+        AudioServiceBridge.onPlayPause = { togglePlayPause() }
+        AudioServiceBridge.onNext = { playNext() }
+        AudioServiceBridge.onPrev = { playPrevious() }
+        AudioServiceBridge.onStop = {
+            pausePlayback()
+            QuranAudioService.stopService(getApplication())
+        }
+    }
 
     fun onPermissionResult(granted: Boolean) {
         val wasGranted = _uiState.value.hasStoragePermission
@@ -101,6 +131,8 @@ class QuranPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     }
                 }
 
+                val generatedCategories = ReciterCategorizer.categorize(scannedTracks)
+
                 _uiState.update { state ->
                     val selected = state.currentTrack?.let { curr ->
                         scannedTracks.find { it.filePath == curr.filePath }
@@ -113,6 +145,7 @@ class QuranPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
                     state.copy(
                         tracks = scannedTracks,
+                        categories = generatedCategories,
                         currentTrack = selected,
                         currentTrackIndex = selectedIndex,
                         currentPositionMs = posMs,
@@ -169,6 +202,8 @@ class QuranPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 )
             }
             startProgressTracker()
+            // Keep background foreground service in sync for seamless TV home-screen playback
+            QuranAudioService.updateService(getApplication(), track, true)
         }
     }
 
@@ -182,20 +217,47 @@ class QuranPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
 
         if (state.isPlaying) {
-            player.pause()
-            saveBookmark()
-            _uiState.update { it.copy(isPlaying = false) }
-            stopProgressTracker()
+            pausePlayback()
         } else {
             if (player.isPlaying) {
                 _uiState.update { it.copy(isPlaying = true) }
                 startProgressTracker()
+                QuranAudioService.updateService(getApplication(), state.currentTrack, true)
             } else {
                 player.resume()
                 _uiState.update { it.copy(isPlaying = true) }
                 startProgressTracker()
+                QuranAudioService.updateService(getApplication(), state.currentTrack, true)
             }
         }
+    }
+
+    fun pausePlayback() {
+        val curr = _uiState.value.currentTrack
+        player.pause {
+            _uiState.update { it.copy(isPlaying = false) }
+        }
+        saveBookmark()
+        _uiState.update { it.copy(isPlaying = false) }
+        stopProgressTracker()
+        QuranAudioService.updateService(getApplication(), curr, false)
+    }
+
+    // =========================================================================
+    // SMART RECITERS & CATEGORIZATION
+    // =========================================================================
+    fun selectCategory(categoryId: String) {
+        _uiState.update { it.copy(selectedCategoryId = categoryId) }
+    }
+
+    // =========================================================================
+    // NIGHT AUDIO MODE (VOCAL BOOSTER EQUALIZER)
+    // =========================================================================
+    fun toggleNightMode() {
+        val newMode = !_uiState.value.isNightMode
+        prefsManager.setNightMode(newMode)
+        player.setNightMode(newMode)
+        _uiState.update { it.copy(isNightMode = newMode) }
     }
 
     // =========================================================================
@@ -262,6 +324,7 @@ class QuranPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     )
                 }
                 stopProgressTracker()
+                QuranAudioService.stopService(getApplication())
                 onSleepFinishedCallback?.invoke()
             }
         }
@@ -426,6 +489,7 @@ class QuranPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun releasePlayer() {
         stopProgressTracker()
+        QuranAudioService.stopService(getApplication())
         player.release()
     }
 

@@ -76,6 +76,7 @@ import com.example.ui.theme.AppleTextTertiary
 import com.example.viewmodel.QuranPlayerUiState
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Timer
 
 @Composable
@@ -88,6 +89,7 @@ fun PlayerControlPanel(
     onCycleRepeat: () -> Unit,
     onToggleShuffle: () -> Unit,
     onRefreshFiles: () -> Unit,
+    onToggleNightMode: () -> Unit = {},
     onSetSleepTimer: ((Int?) -> Unit)? = null,
     playPauseFocusRequester: FocusRequester? = null,
     modifier: Modifier = Modifier
@@ -164,6 +166,18 @@ fun PlayerControlPanel(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        // Night Audio Mode Button (Equalizer Vocal Booster)
+                        FocusableCapsuleButton(
+                            onClick = onToggleNightMode,
+                            icon = Icons.Default.Bedtime,
+                            contentDescription = if (state.isNightMode) "إيقاف وضع الاستماع الليلي" else "تفعيل وضع الاستماع الليلي (تحسين صوت القارئ)",
+                            isActiveToggle = state.isNightMode,
+                            buttonSize = 34.dp,
+                            iconSize = 16.dp,
+                            shape = CircleShape,
+                            testTag = "btn_night_mode"
+                        )
+
                         // Sleep Timer Clock Button
                         val hasTimer = state.sleepTimerRemainingSeconds > 0
                         val timerLabel = if (hasTimer) {
@@ -325,6 +339,33 @@ fun PlayerControlPanel(
                         overflow = TextOverflow.Ellipsis,
                         style = androidx.compose.ui.text.TextStyle(textDirection = TextDirection.ContentOrRtl)
                     )
+
+                    if (state.isNightMode) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(AppleQuaternaryBackground)
+                                .border(BorderStroke(1.dp, AppleSeparator), RoundedCornerShape(12.dp))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Bedtime,
+                                    contentDescription = null,
+                                    tint = AppleTextPrimary,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "نمط ليلي محسن",
+                                    color = AppleTextPrimary,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }

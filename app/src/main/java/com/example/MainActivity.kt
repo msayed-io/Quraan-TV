@@ -82,8 +82,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        // Full resource cleanup for 1GB RAM TV systems
-        viewModel.releasePlayer()
+        // Release player only if not actively playing in background service
+        if (!viewModel.uiState.value.isPlaying) {
+            viewModel.releasePlayer()
+        }
     }
 }
 

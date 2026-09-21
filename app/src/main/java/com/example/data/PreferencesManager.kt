@@ -59,5 +59,17 @@ class PreferencesManager(context: Context) {
         private const val KEY_FAVORITES = "key_favorites"
         private const val KEY_BOOKMARK_FILE = "key_bookmark_file"
         private const val KEY_BOOKMARK_POS = "key_bookmark_pos"
+        private const val KEY_NIGHT_MODE = "key_night_mode"
+    }
+
+    // =========================================================================
+    // 3. NIGHT AUDIO MODE (VOCAL BOOSTER)
+    // =========================================================================
+    fun isNightMode(): Boolean {
+        return prefs.getBoolean(KEY_NIGHT_MODE, false)
+    }
+
+    fun setNightMode(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_NIGHT_MODE, enabled).apply()
     }
 }
