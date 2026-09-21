@@ -26,6 +26,7 @@ object QuranScanner {
     suspend fun scanDownloadFolder(context: Context): List<AudioTrack> = withContext(Dispatchers.IO) {
         val tracks = mutableListOf<AudioTrack>()
         val seenPaths = mutableSetOf<String>()
+        val seenNames = mutableSetOf<String>()
 
         try {
             val scanDirs = mutableListOf<File>()
@@ -55,37 +56,56 @@ object QuranScanner {
 
             for (path in fallbackPaths) {
                 val f = File(path)
-                if (f.exists() && f.isDirectory && !scanDirs.contains(f)) {
-                    scanDirs.add(f)
+                if (f.exists() && f.isDirectory) {
+                    val canonicalDir = try { f.canonicalFile } catch (e: Exception) { f }
+                    if (!scanDirs.any { try { it.canonicalPath == canonicalDir.canonicalPath } catch (e: Exception) { it.absolutePath == f.absolutePath } }) {
+                        scanDirs.add(canonicalDir)
+                    }
                 }
             }
 
             for (dir in scanDirs) {
                 if (dir.exists() && dir.isDirectory) {
-                    scanDirectory(dir, tracks, seenPaths)
+                    scanDirectory(dir, tracks, seenPaths, seenNames)
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error scanning storage directories: ${e.message}", e)
         }
 
-        // Sort tracks naturally by surah number, then Arabic title
-        tracks.sortedWith(
-            compareBy<AudioTrack> { extractNumber(it.fileName) }
-                .thenBy { it.title }
-        )
+        // Distinct strictly by file name (case-insensitive) to prevent duplicates, then sort naturally
+        tracks
+            .distinctBy { it.fileName.lowercase() }
+            .sortedWith(
+                compareBy<AudioTrack> { extractNumber(it.fileName) }
+                    .thenBy { it.title }
+            )
     }
 
-    private fun scanDirectory(dir: File, tracks: MutableList<AudioTrack>, seenPaths: MutableSet<String>) {
+    private fun scanDirectory(
+        dir: File,
+        tracks: MutableList<AudioTrack>,
+        seenPaths: MutableSet<String>,
+        seenNames: MutableSet<String>
+    ) {
         try {
             val files = dir.listFiles() ?: return
             for (file in files) {
-                if (file.isDirectory && !file.name.startsWith(".")) {
+                val fileName = file.name
+                val isHiddenOrTemp = fileName.startsWith(".") || fileName.startsWith("._")
+
+                if (file.isDirectory && !isHiddenOrTemp) {
                     // Search sub-folders inside Download folder
-                    scanDirectory(file, tracks, seenPaths)
-                } else if (file.isFile && file.length() > 0) {
+                    scanDirectory(file, tracks, seenPaths, seenNames)
+                } else if (file.isFile && !isHiddenOrTemp && file.length() > 0) {
                     val ext = file.extension.lowercase()
-                    if (AUDIO_EXTENSIONS.contains(ext) && seenPaths.add(file.absolutePath)) {
+                    val canonicalPath = try { file.canonicalPath } catch (e: Exception) { file.absolutePath }
+                    val lowerName = fileName.lowercase()
+
+                    if (AUDIO_EXTENSIONS.contains(ext) &&
+                        seenPaths.add(canonicalPath) &&
+                        seenNames.add(lowerName)
+                    ) {
                         val track = extractTrackMetadata(file)
                         tracks.add(track)
                     }

@@ -11,47 +11,46 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDirection
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.ui.theme.AppleProgressBg
-import com.example.ui.theme.AppleProgressFill
-import com.example.ui.theme.AppleTextSecondary
-import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
- * Ambient OLED Screensaver to prevent pixel burn-in on Android TV.
- * Fades out main UI and floats minimal surah title & thin progress bar across dark screen.
+ * Radical Apple-Style Ambient OLED Screensaver.
+ * Displays an extra-large, ultra-bold platinum digital clock at screen center.
+ * Features a smoothly blinking colon and 100% English numerals in 12-hour format.
+ * Lightweight & optimized for 1GB RAM Android 9 TV.
  * Dismisses instantly on any D-Pad button press.
  */
 @Composable
 fun AmbientScreensaver(
-    trackTitle: String,
-    progress: Float,
+    trackTitle: String = "",
+    progress: Float = 0f,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -61,27 +60,37 @@ fun AmbientScreensaver(
         focusRequester.requestFocus()
     }
 
-    // Slow drifting offset animation across screen
-    val infiniteTransition = rememberInfiniteTransition(label = "screensaver_anim")
-    val offsetXPercent by infiniteTransition.animateFloat(
-        initialValue = -120f,
-        targetValue = 120f,
+    // Time state tracking (updated every second)
+    var currentTime by remember { mutableStateOf(Date()) }
+
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            currentTime = Date()
+            delay(1000L)
+        }
+    }
+
+    val hoursFormat = remember { SimpleDateFormat("h", Locale.ENGLISH) }
+    val minutesFormat = remember { SimpleDateFormat("mm", Locale.ENGLISH) }
+    val amPmFormat = remember { SimpleDateFormat("a", Locale.ENGLISH) }
+
+    val hoursText = hoursFormat.format(currentTime)
+    val minutesText = minutesFormat.format(currentTime)
+    val amPmText = amPmFormat.format(currentTime)
+
+    // Smooth infinite blinking transition for the clock colon
+    val infiniteTransition = rememberInfiniteTransition(label = "colon_blink_transition")
+    val colonAlpha by infiniteTransition.animateFloat(
+        initialValue = 1.0f,
+        targetValue = 0.2f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 18000, easing = LinearEasing),
+            animation = tween(durationMillis = 1000, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "offset_x"
+        label = "colon_alpha"
     )
 
-    val offsetYPercent by infiniteTransition.animateFloat(
-        initialValue = -80f,
-        targetValue = 80f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 22000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "offset_y"
-    )
+    val platinumWhite = Color(0xFFFAFAFA)
 
     Box(
         modifier = modifier
@@ -99,42 +108,53 @@ fun AmbientScreensaver(
             },
         contentAlignment = Alignment.Center
     ) {
-        // Floating minimal text & thin progress bar
-        Column(
-            modifier = Modifier
-                .offset { IntOffset(offsetXPercent.roundToInt(), offsetYPercent.roundToInt()) }
-                .width(220.dp)
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+        // Center-aligned Apple Watch / iOS Lockscreen Digital Clock
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(16.dp)
         ) {
+            // Hours
             Text(
-                text = trackTitle.ifBlank { "القرآن الكريم" },
-                color = AppleTextSecondary.copy(alpha = 0.55f),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                textAlign = TextAlign.Center,
-                style = androidx.compose.ui.text.TextStyle(textDirection = TextDirection.ContentOrRtl)
+                text = hoursText,
+                color = platinumWhite,
+                fontSize = 110.sp,
+                fontFamily = FontFamily.SansSerif,
+                fontWeight = FontWeight.Black,
+                letterSpacing = (-2).sp
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            // Smoothly blinking colon :
+            Text(
+                text = ":",
+                color = platinumWhite,
+                fontSize = 105.sp,
+                fontFamily = FontFamily.SansSerif,
+                fontWeight = FontWeight.Black,
+                modifier = Modifier.alpha(colonAlpha)
+            )
 
-            // Very thin progress bar (1.5dp height)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(1.5.dp)
-                    .clip(RoundedCornerShape(1.dp))
-                    .background(AppleProgressBg.copy(alpha = 0.3f))
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(progress.coerceIn(0f, 1f))
-                        .height(1.5.dp)
-                        .clip(RoundedCornerShape(1.dp))
-                        .background(AppleProgressFill.copy(alpha = 0.6f))
-                )
-            }
+            // Minutes
+            Text(
+                text = minutesText,
+                color = platinumWhite,
+                fontSize = 110.sp,
+                fontFamily = FontFamily.SansSerif,
+                fontWeight = FontWeight.Black,
+                letterSpacing = (-2).sp
+            )
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            // AM / PM indicator
+            Text(
+                text = amPmText,
+                color = platinumWhite.copy(alpha = 0.65f),
+                fontSize = 32.sp,
+                fontFamily = FontFamily.SansSerif,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
+

@@ -76,17 +76,19 @@ class QuranPlayerViewModel(application: Application) : AndroidViewModel(applicat
     )
 
     fun onPermissionResult(granted: Boolean) {
+        val wasGranted = _uiState.value.hasStoragePermission
         _uiState.update { it.copy(hasStoragePermission = granted) }
-        if (granted) {
+        if (granted && (_uiState.value.tracks.isEmpty() || !wasGranted)) {
             loadAudioFiles()
         }
     }
 
     fun loadAudioFiles() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoadingFiles = true, errorMessage = null) }
+            _uiState.update { it.copy(isLoadingFiles = true, tracks = emptyList(), errorMessage = null) }
             try {
                 val scannedTracks = QuranScanner.scanDownloadFolder(getApplication())
+                    .distinctBy { it.fileName.lowercase() }
                 val bookmark = prefsManager.getBookmark()
                 
                 var restoredTrack: AudioTrack? = null
