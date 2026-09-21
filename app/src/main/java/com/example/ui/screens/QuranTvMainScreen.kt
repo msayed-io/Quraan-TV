@@ -89,6 +89,10 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import com.example.ui.components.AmbientScreensaver
 import com.example.viewmodel.ViewMode
 import kotlinx.coroutines.delay
@@ -106,6 +110,7 @@ fun QuranTvMainScreen(
     val listState = rememberLazyListState()
 
     var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var isSplashVisible by remember { mutableStateOf(true) }
 
     // Permission launcher for Storage
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -129,6 +134,11 @@ fun QuranTvMainScreen(
 
         viewModel.onPermissionResult(isGranted)
 
+        // Show welcome screen cleanly first for 2.5 seconds without system dialogs interrupting
+        delay(2500L)
+        isSplashVisible = false
+
+        // Request storage permission AFTER the splash screen fades out if not already granted
         if (!isGranted) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 permissionLauncher.launch(arrayOf(Manifest.permission.READ_MEDIA_AUDIO))
@@ -622,6 +632,27 @@ fun QuranTvMainScreen(
                     progress = uiState.progress,
                     onDismiss = { viewModel.setScreensaverActive(false) }
                 )
+            }
+
+            // Welcome Splash Screen Overlay (Guaranteed high-res image display)
+            AnimatedVisibility(
+                visible = isSplashVisible,
+                enter = fadeIn(animationSpec = tween(300)),
+                exit = fadeOut(animationSpec = tween(800))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.quran_tv_welcome),
+                        contentDescription = "QURAN TV Welcome Screen",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
+                }
             }
         }
     }
