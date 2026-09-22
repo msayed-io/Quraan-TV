@@ -1,6 +1,6 @@
 <resources>
     <string name="app_name">QURAN TV</string>
-    <string name="quran_player_title">مشغل القرآن الكريم</string>
+    <string name="quran_player_title">مشغل القرآن</string>
     <string name="download_folder">مجلد Download</string>
     <string name="no_audio_files">برجاء نقل ملفات القرآن الصوتية إلى مجلد Download بالشاشة</string>
     <string name="scan_storage">إعادة فحص المجلد</string>

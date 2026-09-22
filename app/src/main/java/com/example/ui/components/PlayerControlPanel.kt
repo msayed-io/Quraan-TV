@@ -76,8 +76,18 @@ import com.example.ui.theme.AppleTextTertiary
 import com.example.viewmodel.QuranPlayerUiState
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.window.PopupProperties
 
 @Composable
 fun PlayerControlPanel(
@@ -91,11 +101,13 @@ fun PlayerControlPanel(
     onRefreshFiles: () -> Unit,
     onToggleNightMode: () -> Unit = {},
     onSetSleepTimer: ((Int?) -> Unit)? = null,
+    onShowQrDialog: () -> Unit = {},
     playPauseFocusRequester: FocusRequester? = null,
     modifier: Modifier = Modifier
 ) {
     val track = state.currentTrack
     var showSleepTimerOptions by remember { mutableStateOf(false) }
+    var showMoreMenu by remember { mutableStateOf(false) }
 
     // Asynchronous embedded artwork & video thumbnail extraction
     var artworkBitmap by remember(track?.filePath) { mutableStateOf<Bitmap?>(null) }
@@ -161,102 +173,139 @@ fun PlayerControlPanel(
                         )
                     }
 
-                    // Status Badge, Sleep Timer Clock Icon & Quick Refresh
+                    // Status Badge, Sleep Timer Clock Icon & More Menu Button
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Night Audio Mode Button (Equalizer Vocal Booster)
-                        FocusableCapsuleButton(
-                            onClick = onToggleNightMode,
-                            icon = Icons.Default.Bedtime,
-                            contentDescription = if (state.isNightMode) "إيقاف وضع الاستماع الليلي" else "تفعيل وضع الاستماع الليلي (تحسين صوت القارئ)",
-                            isActiveToggle = state.isNightMode,
-                            buttonSize = 34.dp,
-                            iconSize = 16.dp,
-                            shape = CircleShape,
-                            testTag = "btn_night_mode"
-                        )
-
-                        // Sleep Timer Clock Button
-                        val hasTimer = state.sleepTimerRemainingSeconds > 0
-                        val timerLabel = if (hasTimer) {
-                            val m = state.sleepTimerRemainingSeconds / 60
-                            val s = state.sleepTimerRemainingSeconds % 60
-                            String.format("%02d:%02d", m, s)
-                        } else null
-
-                        FocusableCapsuleButton(
-                            onClick = { showSleepTimerOptions = !showSleepTimerOptions },
-                            icon = Icons.Default.Timer,
-                            label = timerLabel,
-                            contentDescription = "مؤقت النوم",
-                            isActiveToggle = hasTimer,
-                            buttonSize = 34.dp,
-                            iconSize = 16.dp,
-                            shape = CircleShape,
-                            testTag = "btn_sleep_timer"
-                        )
-
-                        // Compact Refresh button in header
-                        FocusableCapsuleButton(
-                            onClick = onRefreshFiles,
-                            icon = Icons.Default.Refresh,
-                            contentDescription = "فحص التنزيلات",
-                            buttonSize = 34.dp,
-                            iconSize = 16.dp,
-                            shape = CircleShape,
-                            testTag = "btn_player_refresh"
-                        )
-                    }
-                }
-
-                // Sleep Timer Dropdown Options Row
-                AnimatedVisibility(visible = showSleepTimerOptions) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(AppleTertiaryBackground)
-                            .border(BorderStroke(1.dp, AppleSeparator), RoundedCornerShape(16.dp))
-                            .padding(horizontal = 8.dp, vertical = 6.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            listOf(
-                                Pair(15, "15د"),
-                                Pair(30, "30د"),
-                                Pair(45, "45د"),
-                                Pair(60, "1س")
-                            ).forEach { (mins, labelStr) ->
-                                FocusableCapsuleButton(
-                                    onClick = {
-                                        onSetSleepTimer?.invoke(mins)
-                                        showSleepTimerOptions = false
-                                    },
-                                    label = labelStr,
-                                    isActiveToggle = state.sleepTimerMinutes == mins,
-                                    buttonSize = 32.dp,
-                                    shape = RoundedCornerShape(12.dp),
-                                    testTag = "btn_timer_$mins"
-                                )
-                            }
+                        // Sleep Timer Clock Button with Floating Dropdown Menu
+                        Box {
+                            val hasTimer = state.sleepTimerRemainingSeconds > 0
+                            val timerLabel = if (hasTimer) {
+                                val m = state.sleepTimerRemainingSeconds / 60
+                                val s = state.sleepTimerRemainingSeconds % 60
+                                String.format("%02d:%02d", m, s)
+                            } else null
 
                             FocusableCapsuleButton(
-                                onClick = {
-                                    onSetSleepTimer?.invoke(null)
-                                    showSleepTimerOptions = false
-                                },
-                                label = "إيقاف",
-                                isPrimary = state.sleepTimerMinutes == null,
-                                buttonSize = 32.dp,
-                                shape = RoundedCornerShape(12.dp),
-                                testTag = "btn_timer_off"
+                                onClick = { showSleepTimerOptions = !showSleepTimerOptions },
+                                icon = Icons.Default.Timer,
+                                label = timerLabel,
+                                contentDescription = "مؤقت النوم",
+                                isActiveToggle = hasTimer,
+                                buttonSize = 34.dp,
+                                iconSize = 16.dp,
+                                shape = CircleShape,
+                                testTag = "btn_sleep_timer"
                             )
+
+                            // Apple Floating Dropdown for Sleep Timer (Zero Layout Shift & Human Scale)
+                            DropdownMenu(
+                                expanded = showSleepTimerOptions,
+                                onDismissRequest = { showSleepTimerOptions = false },
+                                shape = RoundedCornerShape(14.dp),
+                                containerColor = Color(0xFF1C1C1E),
+                                border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.08f)),
+                                tonalElevation = 0.dp,
+                                shadowElevation = 16.dp,
+                                modifier = Modifier
+                                    .width(200.dp)
+                                    .padding(2.dp),
+                                properties = PopupProperties(focusable = true)
+                            ) {
+                                listOf(
+                                    Pair(15, "15 دقيقة"),
+                                    Pair(30, "30 دقيقة"),
+                                    Pair(45, "45 دقيقة"),
+                                    Pair(60, "ساعة كاملة")
+                                ).forEach { (mins, labelStr) ->
+                                    val isCurrent = state.sleepTimerMinutes == mins
+                                    AppleDropdownMenuItem(
+                                        label = labelStr,
+                                        icon = if (isCurrent) Icons.Default.Check else Icons.Default.Timer,
+                                        isActive = isCurrent,
+                                        onClick = {
+                                            showSleepTimerOptions = false
+                                            onSetSleepTimer?.invoke(mins)
+                                        }
+                                    )
+                                    AppleMenuDivider()
+                                }
+
+                                AppleDropdownMenuItem(
+                                    label = "إيقاف المؤقت",
+                                    icon = Icons.Default.Close,
+                                    isActive = state.sleepTimerMinutes == null,
+                                    onClick = {
+                                        showSleepTimerOptions = false
+                                        onSetSleepTimer?.invoke(null)
+                                    }
+                                )
+                            }
+                        }
+
+                        // 3-dots More Options Button with Floating Dropdown Menu
+                        Box {
+                            FocusableCapsuleButton(
+                                onClick = { showMoreMenu = !showMoreMenu },
+                                icon = Icons.Default.MoreVert,
+                                contentDescription = "خيارات إضافية",
+                                isActiveToggle = showMoreMenu,
+                                buttonSize = 34.dp,
+                                iconSize = 16.dp,
+                                shape = CircleShape,
+                                testTag = "btn_player_more"
+                            )
+
+                            // Apple Floating Dropdown Menu (Absolute Overlay, Smooth 14dp Corners, 220dp Width)
+                            DropdownMenu(
+                                expanded = showMoreMenu,
+                                onDismissRequest = { showMoreMenu = false },
+                                shape = RoundedCornerShape(14.dp),
+                                containerColor = Color(0xFF1C1C1E),
+                                border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.08f)),
+                                tonalElevation = 0.dp,
+                                shadowElevation = 16.dp,
+                                modifier = Modifier
+                                    .width(220.dp)
+                                    .padding(2.dp),
+                                properties = PopupProperties(focusable = true)
+                            ) {
+                                // 1. Remote Control (QR)
+                                AppleDropdownMenuItem(
+                                    label = "التحكم عن بعد",
+                                    icon = Icons.Default.PhoneAndroid,
+                                    onClick = {
+                                        showMoreMenu = false
+                                        onShowQrDialog()
+                                    }
+                                )
+
+                                AppleMenuDivider()
+
+                                // 2. Night Audio Mode
+                                AppleDropdownMenuItem(
+                                    label = "الوضع الليلي",
+                                    icon = Icons.Default.Bedtime,
+                                    isActive = state.isNightMode,
+                                    onClick = {
+                                        showMoreMenu = false
+                                        onToggleNightMode()
+                                    }
+                                )
+
+                                AppleMenuDivider()
+
+                                // 3. Refresh Files
+                                AppleDropdownMenuItem(
+                                    label = "تحديث الملفات",
+                                    icon = Icons.Default.Refresh,
+                                    onClick = {
+                                        showMoreMenu = false
+                                        onRefreshFiles()
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -542,3 +591,70 @@ fun PlayerControlPanel(
         }
     }
 }
+
+/**
+ * Apple-Standard Floating Dropdown Menu Item with magnetic alignment,
+ * 44dp touch/D-pad target, single-line text with ellipsis, and distinct 24dp icon slot.
+ */
+@Composable
+private fun AppleDropdownMenuItem(
+    label: String,
+    icon: ImageVector,
+    isActive: Boolean = false,
+    onClick: () -> Unit
+) {
+    var isFocused by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .padding(horizontal = 4.dp, vertical = 2.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(
+                if (isFocused) Color.White.copy(alpha = 0.16f)
+                else Color.Transparent
+            )
+            .onFocusChanged { isFocused = it.isFocused }
+            .focusable()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = label,
+            color = if (isActive) Color(0xFF0A84FF) else AppleTextPrimary,
+            fontSize = 13.sp,
+            fontWeight = if (isActive || isFocused) FontWeight.SemiBold else FontWeight.Normal,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+            style = androidx.compose.ui.text.TextStyle(textDirection = TextDirection.ContentOrRtl)
+        )
+
+        Box(
+            modifier = Modifier.size(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (isActive) Color(0xFF0A84FF) else if (isFocused) AppleTextPrimary else AppleTextSecondary,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun AppleMenuDivider() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 2.dp)
+            .height(0.5.dp)
+            .background(Color.White.copy(alpha = 0.08f))
+    )
+}
+

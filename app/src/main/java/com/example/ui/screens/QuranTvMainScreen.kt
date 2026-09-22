@@ -61,11 +61,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.R
+import androidx.compose.ui.graphics.asImageBitmap
+import com.example.player.QrCodeGenerator
 import com.example.ui.components.AppleFloatingCapsule
 import com.example.ui.components.FocusableCapsuleButton
 import com.example.ui.components.PlayerControlPanel
 import com.example.ui.components.TrackCapsuleItem
 import com.example.ui.theme.AppleBaseBackground
+import com.example.ui.theme.AppleSecondaryBackground
 import com.example.ui.theme.AppleSeparator
 import com.example.ui.theme.AppleSubtleBorder
 import com.example.ui.theme.AppleTertiaryBackground
@@ -557,6 +560,7 @@ fun QuranTvMainScreen(
                         onToggleShuffle = { viewModel.toggleShuffle() },
                         onRefreshFiles = { viewModel.loadAudioFiles() },
                         onToggleNightMode = { viewModel.toggleNightMode() },
+                        onShowQrDialog = { viewModel.toggleQrDialog(true) },
                         onSetSleepTimer = { mins ->
                             viewModel.setSleepTimer(mins) {
                                 (context as? Activity)?.finish()
@@ -657,6 +661,135 @@ fun QuranTvMainScreen(
                                 )
                             }
                         }
+                    }
+                }
+            }
+
+            // -------------------------------------------------------------------------
+            // COMPANION REMOTE CONTROL QR DIALOG
+            // -------------------------------------------------------------------------
+            AnimatedVisibility(
+                visible = uiState.isQrDialogVisible,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                val qrCloseFocusRequester = remember { FocusRequester() }
+
+                LaunchedEffect(uiState.isQrDialogVisible) {
+                    if (uiState.isQrDialogVisible) {
+                        try {
+                            qrCloseFocusRequester.requestFocus()
+                        } catch (e: Exception) {
+                            // Focus safety fallback
+                        }
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.85f))
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .width(460.dp)
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(AppleSecondaryBackground)
+                            .border(BorderStroke(1.2.dp, AppleSeparator), RoundedCornerShape(24.dp))
+                            .padding(28.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Text(
+                            text = "التحكم عن بعد الذكي (بدون إنترنت)",
+                            color = AppleTextPrimary,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center
+                        )
+
+                        Text(
+                            text = "امسح رمز الـ QR أدناه بهاتفك المحمول للتحكم الكامل في التلفاز، اختيار السور، البحث السريع، وتفعيل المؤقت الليلي بكل سهولة ومباشرة عبر الشبكة المحلية.",
+                            color = AppleTextSecondary,
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center,
+                            lineHeight = 18.sp,
+                            style = androidx.compose.ui.text.TextStyle(textDirection = TextDirection.ContentOrRtl)
+                        )
+
+                        val ip = uiState.localServerIp
+                        if (!ip.isNullOrBlank()) {
+                            val serverUrl = "http://$ip:8080"
+                            val qrBitmap = remember(serverUrl) {
+                                try {
+                                    QrCodeGenerator.generateQrCode(serverUrl, 250)
+                                } catch (e: Exception) {
+                                    null
+                                }
+                            }
+
+                            if (qrBitmap != null) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(180.dp)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(Color.White)
+                                        .padding(10.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    androidx.compose.foundation.Image(
+                                        bitmap = qrBitmap.asImageBitmap(),
+                                        contentDescription = "QR Code Link",
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                            }
+
+                            Text(
+                                text = "رابط الاتصال المباشر:\n$serverUrl",
+                                color = AppleTextPrimary,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                textAlign = TextAlign.Center,
+                                style = androidx.compose.ui.text.TextStyle(textDirection = TextDirection.Ltr)
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(140.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(Color(0xFFFF453A).copy(alpha = 0.15f))
+                                    .border(BorderStroke(1.dp, Color(0xFFFF453A)), RoundedCornerShape(16.dp))
+                                    .padding(16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "يرجى توصيل الشاشة أو التلفزيون بشبكة الـ Wi-Fi المنزلية لتشغيل الخادم المحلي وبدء ميزة التحكم عن بعد.",
+                                    color = Color(0xFFFF453A),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center,
+                                    style = androidx.compose.ui.text.TextStyle(textDirection = TextDirection.ContentOrRtl)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        FocusableCapsuleButton(
+                            onClick = { viewModel.toggleQrDialog(false) },
+                            label = "إغلاق النافذة",
+                            isPrimary = true,
+                            buttonSize = 38.dp,
+                            shape = RoundedCornerShape(19.dp),
+                            testTag = "btn_close_qr_dialog",
+                            modifier = Modifier
+                                .focusRequester(qrCloseFocusRequester)
+                                .width(150.dp)
+                        )
                     }
                 }
             }

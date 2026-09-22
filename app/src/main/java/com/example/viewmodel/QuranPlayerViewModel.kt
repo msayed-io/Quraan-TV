@@ -10,6 +10,7 @@ import com.example.data.ReciterCategorizer
 import com.example.data.ReciterCategory
 import com.example.data.RepeatMode
 import com.example.player.AudioServiceBridge
+import com.example.player.LocalHttpServer
 import com.example.player.QuranAudioPlayer
 import com.example.player.QuranAudioService
 import kotlinx.coroutines.Job
@@ -55,7 +56,11 @@ data class QuranPlayerUiState(
     val selectedCategoryId: String = "all",
 
     // Night Audio Mode (Vocal Booster)
-    val isNightMode: Boolean = false
+    val isNightMode: Boolean = false,
+
+    // Local HTTP Server
+    val localServerIp: String? = null,
+    val isQrDialogVisible: Boolean = false
 )
 
 class QuranPlayerViewModel(application: Application) : AndroidViewModel(application) {
@@ -73,6 +78,7 @@ class QuranPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private var progressJob: Job? = null
     private var sleepTimerJob: Job? = null
     private var onSleepFinishedCallback: (() -> Unit)? = null
+    private var localServer: LocalHttpServer? = null
 
     private val player = QuranAudioPlayer(
         context = application.applicationContext,
@@ -102,6 +108,43 @@ class QuranPlayerViewModel(application: Application) : AndroidViewModel(applicat
         AudioServiceBridge.onStop = {
             pausePlayback()
             QuranAudioService.stopService(getApplication())
+        }
+
+        // Initialize and start the local companion server
+        startLocalServer()
+    }
+
+    private fun startLocalServer() {
+        val ip = LocalHttpServer.getLocalIpAddress()
+        _uiState.update { it.copy(localServerIp = ip) }
+        
+        if (localServer == null) {
+            localServer = LocalHttpServer(
+                port = 8080,
+                onPlayPause = { togglePlayPause() },
+                onNext = { playNext() },
+                onPrev = { playPrevious() },
+                onSearch = { setSearchQuery(it) },
+                onPlayTrack = { id ->
+                    val track = _uiState.value.tracks.find { it.id == id }
+                    if (track != null) {
+                        selectAndPlayTrack(track)
+                    }
+                },
+                onToggleFavorite = { path ->
+                    val track = _uiState.value.tracks.find { it.filePath == path }
+                    if (track != null) {
+                        toggleFavorite(track)
+                    }
+                },
+                onToggleNightMode = { toggleNightMode() },
+                onSetSleepTimer = { mins -> setSleepTimer(mins) },
+                onToggleShuffle = { toggleShuffle() },
+                onToggleRepeat = { cycleRepeatMode() },
+                getCurrentState = { _uiState.value }
+            ).apply {
+                start()
+            }
         }
     }
 
@@ -494,8 +537,19 @@ class QuranPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    fun toggleQrDialog(visible: Boolean) {
+        if (visible) {
+            val ip = LocalHttpServer.getLocalIpAddress()
+            _uiState.update { it.copy(isQrDialogVisible = true, localServerIp = ip) }
+            startLocalServer()
+        } else {
+            _uiState.update { it.copy(isQrDialogVisible = false) }
+        }
+    }
+
     fun releasePlayer() {
         stopProgressTracker()
+        localServer?.stop()
         QuranAudioService.stopService(getApplication())
         player.release()
     }
