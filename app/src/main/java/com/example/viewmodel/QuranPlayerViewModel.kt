@@ -3,6 +3,7 @@ package com.example.viewmodel
 import android.app.Application
 import android.content.Context
 import android.media.AudioManager
+import android.media.MediaMetadataRetriever
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -16,6 +17,7 @@ import com.example.player.AudioServiceBridge
 import com.example.player.LocalHttpServer
 import com.example.player.QuranAudioPlayer
 import com.example.player.QuranAudioService
+import java.io.File
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -166,6 +168,8 @@ class QuranPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 onSetVolume = { vol -> setVolumePercent(vol) },
                 onAdjustVolume = { delta -> adjustVolumeDelta(delta) },
                 onToggleMute = { toggleMute() },
+                cacheDir = getApplication<Application>().cacheDir,
+                onPlayCustomAudio = { file, name -> playCastedAudio(file, name) },
                 getCurrentState = { _uiState.value }
             ).apply {
                 start()
@@ -585,6 +589,54 @@ class QuranPlayerViewModel(application: Application) : AndroidViewModel(applicat
             setVolumePercent(70)
         } else {
             setVolumePercent(0)
+        }
+    }
+
+    fun playCastedAudio(file: File, originalName: String) {
+        viewModelScope.launch {
+            try {
+                var durationMs = 0L
+                try {
+                    val retriever = MediaMetadataRetriever()
+                    retriever.setDataSource(file.absolutePath)
+                    val durStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                    durationMs = durStr?.toLongOrNull() ?: 0L
+                    retriever.release()
+                } catch (e: Exception) {
+                    Log.w("QuranPlayerViewModel", "Could not extract metadata: ${e.message}")
+                }
+
+                // Clean title: remove file extension (.mp3, .m4a, etc.)
+                val cleanTitle = originalName.substringBeforeLast(".")
+                    .replace("_", " ")
+                    .replace("-", " ")
+                    .trim()
+                    .ifBlank { "تلاوة صوتية" }
+
+                val castedTrack = AudioTrack(
+                    id = "cast_${System.currentTimeMillis()}",
+                    title = cleanTitle,
+                    surahNameArabic = cleanTitle,
+                    reciterOrSubtitle = "بث مباشر من الهاتف 📱",
+                    fileName = originalName,
+                    filePath = file.absolutePath,
+                    uri = null,
+                    durationMs = durationMs,
+                    sizeBytes = file.length(),
+                    isSample = false,
+                    reciterName = "الهاتف"
+                )
+
+                _uiState.update { state ->
+                    val updatedTracks = listOf(castedTrack) + state.tracks.filter { it.filePath != file.absolutePath }
+                    state.copy(tracks = updatedTracks)
+                }
+
+                selectAndPlayTrack(castedTrack)
+            } catch (e: Exception) {
+                Log.e("QuranPlayerViewModel", "Failed to play casted audio", e)
+                _uiState.update { it.copy(errorMessage = "تعذر تشغيل التلاوة المرسلة من الهاتف: ${e.message}") }
+            }
         }
     }
 

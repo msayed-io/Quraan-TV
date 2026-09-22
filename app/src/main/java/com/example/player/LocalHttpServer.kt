@@ -3,8 +3,9 @@ package com.example.player
 import android.util.Log
 import com.example.data.AudioTrack
 import com.example.viewmodel.QuranPlayerUiState
-import java.io.BufferedReader
-import java.io.InputStreamReader
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetAddress
 import java.net.NetworkInterface
@@ -32,6 +33,8 @@ class LocalHttpServer(
     private val onSetVolume: (Int) -> Unit = {},
     private val onAdjustVolume: (Int) -> Unit = {},
     private val onToggleMute: () -> Unit = {},
+    private val cacheDir: File? = null,
+    private val onPlayCustomAudio: (File, String) -> Unit = { _, _ -> },
     private val getCurrentState: () -> QuranPlayerUiState
 ) {
     private var serverSocket: ServerSocket? = null
@@ -124,20 +127,48 @@ class LocalHttpServer(
     private fun handleClientSocket(socket: Socket) {
         try {
             socket.use { s ->
-                s.soTimeout = 10000
-                val reader = BufferedReader(InputStreamReader(s.getInputStream(), Charsets.UTF_8))
-                val requestLine = reader.readLine() ?: return
+                s.soTimeout = 60000 // Support streaming file uploads without premature timeout
+                val rawIn = s.getInputStream()
 
+                // Read headers safely byte by byte until \r\n\r\n
+                val headersBuffer = ByteArrayOutputStream()
+                var prevByte = -1
+                var prevPrevByte = -1
+                var prevPrevPrevByte = -1
+
+                while (true) {
+                    val b = rawIn.read()
+                    if (b == -1) break
+                    headersBuffer.write(b)
+                    if (prevPrevPrevByte == '\r'.code && prevPrevByte == '\n'.code && prevByte == '\r'.code && b == '\n'.code) {
+                        break
+                    }
+                    prevPrevPrevByte = prevPrevByte
+                    prevPrevByte = prevByte
+                    prevByte = b
+                }
+
+                val headersText = headersBuffer.toString("UTF-8")
+                val headerLines = headersText.split("\r\n")
+                if (headerLines.isEmpty() || headerLines[0].isBlank()) return
+
+                val requestLine = headerLines[0]
                 val parts = requestLine.split(" ")
                 if (parts.size < 2) return
 
                 val method = parts[0].uppercase()
                 val fullUri = parts[1]
 
-                // Consume remaining request headers
-                while (true) {
-                    val headerLine = reader.readLine() ?: break
-                    if (headerLine.isEmpty()) break
+                // Parse headers map
+                val headersMap = mutableMapOf<String, String>()
+                for (i in 1 until headerLines.size) {
+                    val line = headerLines[i]
+                    val colonIdx = line.indexOf(':')
+                    if (colonIdx > 0) {
+                        val key = line.substring(0, colonIdx).trim().lowercase()
+                        val value = line.substring(colonIdx + 1).trim()
+                        headersMap[key] = value
+                    }
                 }
 
                 val uriParts = fullUri.split("?", limit = 2)
@@ -171,6 +202,14 @@ class LocalHttpServer(
                         val bytes = responseJson.toByteArray(Charsets.UTF_8)
                         sendResponse(os, 200, "OK", "application/json; charset=utf-8", bytes)
                     }
+                    "/api/cast_audio" -> {
+                        val contentLength = headersMap["content-length"]?.toLongOrNull() ?: 0L
+                        val queryMap = parseQueryParams(query)
+                        val originalFilename = queryMap["filename"] ?: "audio_${System.currentTimeMillis()}.mp3"
+                        val responseJson = handleAudioUpload(rawIn, contentLength, originalFilename)
+                        val bytes = responseJson.toByteArray(Charsets.UTF_8)
+                        sendResponse(os, 200, "OK", "application/json; charset=utf-8", bytes)
+                    }
                     else -> {
                         val notFoundBytes = "404 Not Found".toByteArray(Charsets.UTF_8)
                         sendResponse(os, 404, "Not Found", "text/plain", notFoundBytes)
@@ -179,6 +218,49 @@ class LocalHttpServer(
             }
         } catch (e: Exception) {
             Log.d(TAG, "Client connection handled or ended: ${e.message}")
+        }
+    }
+
+    private fun handleAudioUpload(
+        rawIn: InputStream,
+        contentLength: Long,
+        originalFilename: String
+    ): String {
+        return try {
+            val targetDir = if (cacheDir != null) {
+                File(cacheDir, "casted_audios").apply { if (!exists()) mkdirs() }
+            } else {
+                File.createTempFile("casted_", "_dir").parentFile ?: File("/tmp")
+            }
+
+            val safeName = originalFilename.replace(Regex("[^a-zA-Z0-9._\\- \u0600-\u06FF]"), "_")
+            val destFile = File(targetDir, "${System.currentTimeMillis()}_$safeName")
+
+            var bytesReadTotal = 0L
+            val buffer = ByteArray(32 * 1024)
+            destFile.outputStream().buffered().use { fos ->
+                while (contentLength <= 0 || bytesReadTotal < contentLength) {
+                    val toRead = if (contentLength > 0) {
+                        Math.min(buffer.size.toLong(), contentLength - bytesReadTotal).toInt()
+                    } else {
+                        buffer.size
+                    }
+                    val read = rawIn.read(buffer, 0, toRead)
+                    if (read <= 0) break
+                    fos.write(buffer, 0, read)
+                    bytesReadTotal += read
+                }
+                fos.flush()
+            }
+
+            Log.i(TAG, "Successfully received casted audio file: ${destFile.absolutePath} ($bytesReadTotal bytes)")
+
+            onPlayCustomAudio(destFile, originalFilename)
+
+            """{"status":"success","action":"cast_audio","filePath":"${escapeJson(destFile.absolutePath)}","sizeBytes":$bytesReadTotal}"""
+        } catch (e: Exception) {
+            Log.e(TAG, "Error receiving casted audio", e)
+            """{"status":"error","message":"${escapeJson(e.message ?: "Upload failed")}"}"""
         }
     }
 
@@ -858,7 +940,138 @@ class LocalHttpServer(
                     color: var(--apple-red);
                 }
 
-                /* 5. Playlist & Search Sheet */
+                /* 5. Phone Audio Casting Hub */
+                .cast-card {
+                    background: var(--card-surface);
+                    backdrop-filter: blur(30px);
+                    -webkit-backdrop-filter: blur(30px);
+                    border: 0.5px solid var(--card-border);
+                    border-radius: 28px;
+                    padding: 16px 18px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 12px;
+                    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+                    background: linear-gradient(135deg, rgba(28, 28, 30, 0.95) 0%, rgba(38, 38, 44, 0.75) 100%);
+                }
+
+                .cast-header {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 10px;
+                }
+
+                .cast-title-group {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    flex: 1;
+                    min-width: 0;
+                }
+
+                .cast-icon-badge {
+                    width: 38px;
+                    height: 38px;
+                    border-radius: 12px;
+                    background: rgba(10, 132, 255, 0.18);
+                    border: 0.5px solid rgba(10, 132, 255, 0.35);
+                    color: var(--apple-blue);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    flex-shrink: 0;
+                }
+
+                .cast-text-group {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 2px;
+                    min-width: 0;
+                }
+
+                .cast-title {
+                    font-size: 13px;
+                    font-weight: 700;
+                    color: var(--text-primary);
+                }
+
+                .cast-subtitle {
+                    font-size: 11px;
+                    color: var(--text-secondary);
+                }
+
+                .btn-cast-upload {
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    background: var(--apple-blue);
+                    color: #FFFFFF;
+                    padding: 8px 13px;
+                    border-radius: 14px;
+                    font-size: 12px;
+                    font-weight: 700;
+                    box-shadow: 0 4px 12px rgba(10, 132, 255, 0.35);
+                    flex-shrink: 0;
+                }
+
+                .btn-cast-upload:active {
+                    background: #0071E3;
+                }
+
+                .cast-progress-box {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 6px;
+                    background: rgba(0, 0, 0, 0.4);
+                    border: 0.5px solid var(--card-border-subtle);
+                    border-radius: 14px;
+                    padding: 10px 12px;
+                }
+
+                .cast-prog-top {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    font-size: 12px;
+                    font-weight: 600;
+                }
+
+                .cast-prog-filename {
+                    color: var(--text-primary);
+                    max-width: 220px;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+
+                .cast-prog-percent {
+                    color: var(--apple-blue);
+                    font-weight: 700;
+                }
+
+                .cast-prog-track {
+                    width: 100%;
+                    height: 6px;
+                    background: rgba(255, 255, 255, 0.12);
+                    border-radius: 3px;
+                    overflow: hidden;
+                }
+
+                .cast-prog-fill {
+                    height: 100%;
+                    width: 0%;
+                    background: var(--apple-blue);
+                    border-radius: 3px;
+                    transition: width 0.2s ease;
+                }
+
+                .cast-prog-status {
+                    font-size: 11px;
+                    color: var(--text-secondary);
+                }
+
+                /* 6. Playlist & Search Sheet */
                 .playlist-sheet {
                     background: var(--card-surface);
                     backdrop-filter: blur(30px);
@@ -1129,7 +1342,39 @@ class LocalHttpServer(
                     </div>
                 </div>
 
-                <!-- 5. Playlist & Search Sheet -->
+                <!-- 5. Phone Audio Casting Card -->
+                <div class="cast-card">
+                    <div class="cast-header">
+                        <div class="cast-title-group">
+                            <div class="cast-icon-badge">
+                                <svg class="icon-svg" style="width:20px; height:20px;" viewBox="0 0 24 24"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+                            </div>
+                            <div class="cast-text-group">
+                                <span class="cast-title">بث تلاوة من هاتفي للتلفاز</span>
+                                <span class="cast-subtitle">اختر أي ملف صوتي لتشغيله فوراً على الشاشة</span>
+                            </div>
+                        </div>
+                        <button class="btn-tap btn-cast-upload" onclick="triggerAudioPicker()" title="اختيار ملف صوتي من الهاتف">
+                            <svg class="icon-svg" style="width:16px; height:16px;" viewBox="0 0 24 24"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg>
+                            <span>اختيار ملف</span>
+                        </button>
+                        <input type="file" id="file-picker" accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg,.flac" style="display:none;" onchange="handleFileSelected(this)">
+                    </div>
+
+                    <!-- Upload Progress Modal / Indicator -->
+                    <div class="cast-progress-box" id="cast-progress-box" style="display:none;">
+                        <div class="cast-prog-top">
+                            <span class="cast-prog-filename" id="cast-filename">surah.mp3</span>
+                            <span class="cast-prog-percent" id="cast-percent">0%</span>
+                        </div>
+                        <div class="cast-prog-track">
+                            <div class="cast-prog-fill" id="cast-prog-fill"></div>
+                        </div>
+                        <span class="cast-prog-status" id="cast-status-txt">جاري نقل الملف للتلفاز...</span>
+                    </div>
+                </div>
+
+                <!-- 6. Playlist & Search Sheet -->
                 <div class="playlist-sheet">
                     <div class="search-field">
                         <svg class="icon-svg" style="width:17px; height:17px; color:var(--text-tertiary);" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
@@ -1390,6 +1635,77 @@ class LocalHttpServer(
                             filterLocalPlaylist(document.getElementById('inp-search').value);
                         })
                         .catch(err => console.error('Failed to load tracks list:', err));
+                }
+
+                /* Phone Audio Casting Logic */
+                function triggerAudioPicker() {
+                    document.getElementById('file-picker').click();
+                }
+
+                function handleFileSelected(input) {
+                    if (!input.files || input.files.length === 0) return;
+                    const file = input.files[0];
+                    uploadAndCastAudio(file);
+                    // Reset input so user can pick same file again if desired
+                    input.value = '';
+                }
+
+                function uploadAndCastAudio(file) {
+                    const progressBox = document.getElementById('cast-progress-box');
+                    const filenameTxt = document.getElementById('cast-filename');
+                    const percentTxt = document.getElementById('cast-percent');
+                    const fillBar = document.getElementById('cast-prog-fill');
+                    const statusTxt = document.getElementById('cast-status-txt');
+
+                    progressBox.style.display = 'flex';
+                    filenameTxt.innerText = file.name;
+                    percentTxt.innerText = '0%';
+                    fillBar.style.width = '0%';
+                    statusTxt.innerText = 'جاري نقل الملف للتلفاز...';
+
+                    const xhr = new XMLHttpRequest();
+                    const url = '/api/cast_audio?filename=' + encodeURIComponent(file.name);
+
+                    xhr.open('POST', url, true);
+                    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+
+                    xhr.upload.onprogress = function(e) {
+                        if (e.lengthComputable) {
+                            const percent = Math.round((e.loaded / e.total) * 100);
+                            percentTxt.innerText = percent + '%';
+                            fillBar.style.width = percent + '%';
+                            if (percent >= 100) {
+                                statusTxt.innerText = 'اكتمل النقل، جاري تشغيل التلاوة على الشاشة...';
+                            }
+                        }
+                    };
+
+                    xhr.onload = function() {
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            percentTxt.innerText = '100%';
+                            fillBar.style.width = '100%';
+                            statusTxt.innerText = 'تم البدء بالتشغيل بنجاح!';
+                            setTimeout(() => {
+                                progressBox.style.display = 'none';
+                                pollStatus();
+                                loadTracks();
+                            }, 2500);
+                        } else {
+                            statusTxt.innerText = 'فشل نقل الملف. يرجى المحاولة ثانية.';
+                            setTimeout(() => {
+                                progressBox.style.display = 'none';
+                            }, 3500);
+                        }
+                    };
+
+                    xhr.onerror = function() {
+                        statusTxt.innerText = 'تعذر الاتصال بالشاشة.';
+                        setTimeout(() => {
+                            progressBox.style.display = 'none';
+                        }, 3500);
+                    };
+
+                    xhr.send(file);
                 }
 
                 setInterval(pollStatus, 1000);
