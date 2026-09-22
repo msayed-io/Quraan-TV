@@ -1,6 +1,9 @@
 package com.example.viewmodel
 
 import android.app.Application
+import android.content.Context
+import android.media.AudioManager
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.AudioTrack
@@ -58,6 +61,10 @@ data class QuranPlayerUiState(
     // Night Audio Mode (Vocal Booster)
     val isNightMode: Boolean = false,
 
+    // Volume & Audio Control (0..100)
+    val volumePercent: Int = 100,
+    val isMuted: Boolean = false,
+
     // Local HTTP Server
     val localServerIp: String? = null,
     val isQrDialogVisible: Boolean = false
@@ -65,12 +72,27 @@ data class QuranPlayerUiState(
 
 class QuranPlayerViewModel(application: Application) : AndroidViewModel(application) {
 
+    companion object {
+        private fun getCurrentSystemVolumePercent(audioManager: AudioManager): Int {
+            return try {
+                val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                if (max > 0) ((current.toFloat() / max) * 100).toInt().coerceIn(0, 100) else 100
+            } catch (e: Exception) {
+                100
+            }
+        }
+    }
+
     private val prefsManager = PreferencesManager(application.applicationContext)
+    private val audioManager = application.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
     private val _uiState = MutableStateFlow(
         QuranPlayerUiState(
             favorites = prefsManager.getFavorites(),
-            isNightMode = prefsManager.isNightMode()
+            isNightMode = prefsManager.isNightMode(),
+            volumePercent = getCurrentSystemVolumePercent(application.getSystemService(Context.AUDIO_SERVICE) as AudioManager),
+            isMuted = (getCurrentSystemVolumePercent(application.getSystemService(Context.AUDIO_SERVICE) as AudioManager)) == 0
         )
     )
     val uiState: StateFlow<QuranPlayerUiState> = _uiState.asStateFlow()
@@ -141,6 +163,9 @@ class QuranPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 onSetSleepTimer = { mins -> setSleepTimer(mins) },
                 onToggleShuffle = { toggleShuffle() },
                 onToggleRepeat = { cycleRepeatMode() },
+                onSetVolume = { vol -> setVolumePercent(vol) },
+                onAdjustVolume = { delta -> adjustVolumeDelta(delta) },
+                onToggleMute = { toggleMute() },
                 getCurrentState = { _uiState.value }
             ).apply {
                 start()
@@ -534,6 +559,32 @@ class QuranPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 durationMs = total,
                 progress = prog
             )
+        }
+    }
+
+    fun setVolumePercent(percent: Int) {
+        try {
+            val p = percent.coerceIn(0, 100)
+            val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            val target = ((p / 100f) * max).toInt().coerceIn(0, max)
+            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
+            _uiState.update { it.copy(volumePercent = p, isMuted = p == 0) }
+        } catch (e: Exception) {
+            Log.e("QuranPlayerViewModel", "Error setting volume: ${e.message}")
+        }
+    }
+
+    fun adjustVolumeDelta(delta: Int) {
+        val current = _uiState.value.volumePercent
+        setVolumePercent((current + delta).coerceIn(0, 100))
+    }
+
+    fun toggleMute() {
+        val state = _uiState.value
+        if (state.isMuted || state.volumePercent == 0) {
+            setVolumePercent(70)
+        } else {
+            setVolumePercent(0)
         }
     }
 

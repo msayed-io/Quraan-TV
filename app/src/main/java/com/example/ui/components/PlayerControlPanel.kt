@@ -46,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
@@ -313,106 +314,146 @@ fun PlayerControlPanel(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Main Surah Display Hero Card (Apple Tertiary Background #2C2C2E)
+            // Main Surah Display Hero Card (Apple Full-Bleed Artwork Card #2C2C2E)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
                     .clip(RoundedCornerShape(22.dp))
                     .background(AppleTertiaryBackground)
-                    .border(BorderStroke(1.dp, AppleSubtleBorder), RoundedCornerShape(22.dp))
-                    .padding(20.dp),
+                    .border(BorderStroke(1.dp, AppleSubtleBorder), RoundedCornerShape(22.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    // Embedded Album Art / Frame Box (Square card with downsampled artwork or fallback icon)
-                    val artwork = artworkBitmap
+                val artwork = artworkBitmap
+
+                // 1. Full-Bleed Artwork Cover Image / Ambient Backdrop
+                if (artwork != null) {
+                    Image(
+                        bitmap = artwork.asImageBitmap(),
+                        contentDescription = "غلاف المقطع",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    // Fallback Ambient Islamic Geometric / Gradient Background
                     Box(
                         modifier = Modifier
-                            .size(110.dp)
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(AppleQuaternaryBackground)
-                            .border(BorderStroke(1.dp, AppleSeparator), RoundedCornerShape(20.dp)),
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        Color(0xFF2C2C2E),
+                                        Color(0xFF1C1C1E)
+                                    )
+                                )
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (state.isBuffering) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(32.dp),
-                                color = AppleTextPrimary,
-                                strokeWidth = 2.5.dp
-                            )
-                        } else if (artwork != null) {
-                            Image(
-                                bitmap = artwork.asImageBitmap(),
-                                contentDescription = "غلاف المقطع",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        } else {
+                        Icon(
+                            imageVector = Icons.Default.MenuBook,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.15f),
+                            modifier = Modifier.size(72.dp)
+                        )
+                    }
+                }
+
+                // 2. Buffering Indicator Overlay (if active)
+                if (state.isBuffering) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.45f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(36.dp),
+                            color = AppleTextPrimary,
+                            strokeWidth = 3.dp
+                        )
+                    }
+                }
+
+                // 3. Top-End Night Mode Badge (if active)
+                if (state.isNightMode) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(12.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.Black.copy(alpha = 0.65f))
+                            .border(BorderStroke(0.5.dp, Color.White.copy(alpha = 0.15f)), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                imageVector = Icons.Default.MenuBook,
+                                imageVector = Icons.Default.Bedtime,
                                 contentDescription = null,
-                                tint = AppleTextPrimary,
-                                modifier = Modifier.size(42.dp)
+                                tint = Color(0xFF0A84FF),
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "الوضع الليلي",
+                                color = AppleTextPrimary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium
                             )
                         }
                     }
+                }
 
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // Real File Name (Pure #F5F5F5 Apple Heading)
-                    Text(
-                        text = track?.title ?: stringResource(R.string.no_track_selected),
-                        color = AppleTextPrimary,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        style = androidx.compose.ui.text.TextStyle(textDirection = TextDirection.ContentOrRtl)
-                    )
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    // Subtitle (Format / Size / Folder)
-                    Text(
-                        text = track?.reciterOrSubtitle ?: "اختر ملفاً من القائمة لبدء الاستماع",
-                        color = AppleTextSecondary,
-                        fontSize = 13.sp,
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = androidx.compose.ui.text.TextStyle(textDirection = TextDirection.ContentOrRtl)
-                    )
-
-                    if (state.isNightMode) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(AppleQuaternaryBackground)
-                                .border(BorderStroke(1.dp, AppleSeparator), RoundedCornerShape(12.dp))
-                                .padding(horizontal = 8.dp, vertical = 3.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Bedtime,
-                                    contentDescription = null,
-                                    tint = AppleTextPrimary,
-                                    modifier = Modifier.size(12.dp)
+                // 4. Compact Apple Scrim Gradient with Title and Reciter (Subtle Vignette)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    Color.Transparent,
+                                    Color.Black.copy(alpha = 0.35f),
+                                    Color.Black.copy(alpha = 0.78f)
                                 )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "نمط ليلي محسن",
-                                    color = AppleTextPrimary,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
+                            )
+                        )
+                        .padding(horizontal = 14.dp)
+                        .padding(top = 8.dp, bottom = 10.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        // Title
+                        Text(
+                            text = track?.title ?: stringResource(R.string.no_track_selected),
+                            color = AppleTextPrimary,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            style = androidx.compose.ui.text.TextStyle(textDirection = TextDirection.ContentOrRtl)
+                        )
+
+                        val reciterDisplay = if (!track?.reciterName.isNullOrBlank()) {
+                            track?.reciterName
+                        } else if (!track?.surahNameArabic.isNullOrBlank()) {
+                            track?.surahNameArabic
+                        } else null
+
+                        if (!reciterDisplay.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = reciterDisplay,
+                                color = AppleTextSecondary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Normal,
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = androidx.compose.ui.text.TextStyle(textDirection = TextDirection.ContentOrRtl)
+                            )
                         }
                     }
                 }
